@@ -19,7 +19,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "-r",
         "--ngis_referral_id",
         type=str,
-        help="NGIS referral ID, e.g r20000000001",
+        help="NGIS referral ID, e.g r30000000001",
         required=True,
     )
     parser.add_argument(
