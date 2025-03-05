@@ -117,6 +117,9 @@ def main(cmdline_args: list[str]) -> GenomicFiles:
     if args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
     client: CGPClient = CGPClient(
         api_host=args.api_host,
         api_name=args.api_name,
