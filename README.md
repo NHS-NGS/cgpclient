@@ -1,10 +1,12 @@
-# cgpclient: a python client library for the Clinical Genomics Platform (CGP)
+# cgpclient: a python client library for the Clinical Genomics Platform (CGP) - Alpha
 
 This repository contains a python client library for interacting with CGP APIs hosted in the [NHS API Platform](https://digital.nhs.uk/services/api-platform) (APIM). There are modules to enable developers to interact with various API endpoints using the HL7 FHIR, and GA4GH DRS and htsget standards, and which deal with different approaches to authentication in APIM.
 
 The repository also includes some scripts that perform (hopefully) useful functions using these modules, and which serve as examples on how to use the client library.
 
-__NB__ This package, and the APIs it communicates with, are under active development and are currently at the [Alpha](https://www.gov.uk/service-manual/agile-delivery/how-the-alpha-phase-works) phase of delivery. At this stage the APIs may still be subject to breaking changes, and we do not offer any SLAs etc. This code is intended to support NHS GMS partners to start to experiment with these new services and feedback is welcome - please create an Issue in the github project. We anticipate moving to a private Beta phase in the second quarter of 2025.
+__NB__ This package, and the APIs it communicates with, are under active development and are currently at the [Alpha](https://www.gov.uk/service-manual/agile-delivery/how-the-alpha-phase-works) phase of delivery. At this stage the APIs may still be subject to breaking changes, and we do not offer any SLAs etc. This code is intended to support NHS GMS partners to start to experiment with these new services and to provide feedback - please create an Issue in github, and pull requests are welcome! 
+
+We anticipate moving to a private Beta phase in the second quarter of 2025, during which we will start to experiment with realistic data rather than the test data used so far.
 
 ## Installation
 
