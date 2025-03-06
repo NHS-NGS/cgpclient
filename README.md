@@ -41,7 +41,7 @@ The scripts described below can be found in the `cgpclient/scripts` directory.
 
 ## Contributing
 
-(following the JellyPy model!)
+(following the [JellyPy](https://github.com/NHS-NGS/JellyPy) model!)
 
 Please raise an issue to request new functions or features: https://github.com/NHS-NGS/cgpclient/issues
 
