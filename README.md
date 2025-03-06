@@ -39,6 +39,14 @@ pytest
 
 The scripts described below can be found in the `cgpclient/scripts` directory.
 
+## Contributing
+
+(following the JellyPy model!)
+
+Please raise an issue to request new functions or features: https://github.com/NHS-NGS/cgpclient/issues
+
+To develop a new function or feature, please take a look at the issues raised. If there's something that you would like to code up, then (you are awesome and) start a discussion in the #gdam channel at https://binfx.slack.com/messages
+
 ## NHS API Platform authentication
 
 __NB__ You don't need to use authentication when using the APIM sandbox environment.
