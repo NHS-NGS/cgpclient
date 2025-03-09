@@ -7,21 +7,19 @@ import jwt
 import requests  # type: ignore
 from pydantic import BaseModel
 
-from cgpclient.drs import (
-    AccessMethod,
-    AccessURL,
-    Checksum,
-    DrsObject,
-    drs_base_url,
-    get_access_url,
-    put_object,
-)
+from cgpclient.drs import DrsObject, get_access_url, put_object
+from cgpclient.drsupload import upload_file
 from cgpclient.fhir import (  # type: ignore
+    CGPDocumentReference,
     CGPServiceRequest,
+    Patient,
     PedigreeRole,
-    get_service_request_for_ngis_referral_id,
+    Specimen,
+    create_document_reference,
+    get_patient,
+    get_service_request,
+    put_resource,
 )
-from cgpclient.htsget import htsget_base_url
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException
 
 
@@ -65,7 +63,7 @@ class CGPClient:
         self.override_api_base_url = override_api_base_url
 
         self._oauth_token: NHSOAuthToken | None = None
-        self._using_sandbox = self.api_host.startswith("sandbox.")
+        self._using_sandbox_env = self.api_host.startswith("sandbox.")
 
     @property
     def api_base_url(self) -> str:
@@ -149,16 +147,17 @@ class CGPClient:
 
     def get_access_token(self) -> str | None:
         """Get the current OAuth access token value"""
-        if self._using_sandbox:
+        if self._using_sandbox_env:
             logging.info("No access token required in sandbox environment")
             return None
 
         return self.get_oauth_token().access_token
 
+    @property
     def headers(self) -> dict[str, str]:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
 
-        if self._using_sandbox:
+        if self._using_sandbox_env:
             logging.debug("Skipping authentication for sandbox environment")
             return {}
 
@@ -178,21 +177,29 @@ class CGPClient:
 
     def get_service_request(self, ngis_referral_id: str) -> CGPServiceRequest:
         """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
-        return get_service_request_for_ngis_referral_id(
+        return get_service_request(
             ngis_referral_id=ngis_referral_id,
             api_base_url=self.api_base_url,
-            headers=self.headers(),
+            headers=self.headers,
+        )
+
+    def get_patient(self, ngis_participant_id: str) -> Patient:
+        """Fetch a FHIR Patient resource for the given NGIS participant ID"""
+        return get_patient(
+            ngis_participant_id=ngis_participant_id,
+            api_base_url=self.api_base_url,
+            headers=self.headers,
         )
 
     def get_genomic_files(self, ngis_referral_id: str) -> GenomicFiles:
         """Retrieve details of genomic files associated with an NGIS referral ID"""
         service_request: CGPServiceRequest = self.get_service_request(ngis_referral_id)
         pedigree_roles: dict[str, PedigreeRole] = service_request.get_pedigree_roles(
-            api_base_url=self.api_base_url, headers=self.headers()
+            api_base_url=self.api_base_url, headers=self.headers
         )
         files: list[GenomicFile] = []
         for doc_ref in service_request.document_references(
-            api_base_url=self.api_base_url, headers=self.headers()
+            api_base_url=self.api_base_url, headers=self.headers
         ):
             files.append(
                 GenomicFile(
@@ -204,7 +211,7 @@ class CGPClient:
                     htsget_url=get_access_url(
                         doc_ref.url(),
                         access_type="htsget",
-                        headers=self.headers(),
+                        headers=self.headers,
                         api_base_url_override=(
                             self.api_base_url if self.override_api_base_url else None
                         ),
@@ -215,45 +222,42 @@ class CGPClient:
 
         return GenomicFiles(files=files)
 
-    def register_s3_object(
+    def upload_file(
         self,
-        s3_uri: str,
-        size: int,
-        md5_checksum: str,
+        filename: Path,
         mime_type: str,
-        add_htsget: bool = False,
-        original_path: str | None = None,
-        aws_region: str = "eu-west-2",
-    ) -> None:
-        access_methods: list[AccessMethod] = [
-            AccessMethod(type="s3", access_url=AccessURL(url=s3_uri), region=aws_region)
-        ]
+        ngis_participant_id,
+        ngis_referral_id,
+        specimen: Specimen | None = None,
+    ) -> CGPDocumentReference:
+        """Upload the file to the CGP, create a DRS object and
+        corresponding FHIR resources"""
+        patient: Patient = self.get_patient(ngis_participant_id)
+        service_request: CGPServiceRequest = self.get_service_request(ngis_referral_id)
 
-        if add_htsget:
-            access_methods.append(
-                AccessMethod(
-                    type="htsget",
-                    access_url=AccessURL(
-                        url=f"{htsget_base_url(self.api_base_url)}/{s3_uri}"
-                    ),
-                )
-            )
-
-        if original_path is not None:
-            access_methods.append(AccessMethod(type="file", access_id=original_path))
-
-        drs_id: str = str(uuid.uuid4())
-        drs_endpoint: str = drs_base_url(self.api_base_url)
-        created_at: str = str(time())
-
-        drs_object: DrsObject = DrsObject(
-            id=drs_id,
-            self_uri=f"{drs_endpoint}/{drs_id}",
-            size=size,
+        drs_object: DrsObject = upload_file(
+            filename=filename,
             mime_type=mime_type,
-            checksums=[Checksum(type="md5", checksum=md5_checksum)],
-            created_time=created_at,
-            access_methods=access_methods,
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+            post_resource=False,
         )
 
-        put_object(drs_object=drs_object, endpoint=drs_endpoint, headers=self.headers())
+        put_object(
+            drs_object=drs_object,
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+        )
+
+        document_reference: CGPDocumentReference = create_document_reference(
+            drs_object=drs_object,
+            patient=patient,
+            service_request=service_request,
+            specimen=specimen,
+        )
+
+        put_resource(
+            document_reference, api_base_url=self.api_base_url, headers=self.headers
+        )
+
+        return document_reference
