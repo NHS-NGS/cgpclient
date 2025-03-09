@@ -1,15 +1,26 @@
 import logging
-import uuid
+from enum import StrEnum
 from typing import List
 
 import requests  # type: ignore
 from pydantic import BaseModel, Field, model_validator
 from typing_extensions import Self
 
-from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException
+from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, create_uuid
 
 # Definitions from:
 # https://ga4gh.github.io/data-repository-service-schemas/preview/release/drs-1.4.0/docs/
+
+
+class AccessMethodType(StrEnum):
+    S3 = "s3"
+    GS = "gs"
+    FTP = "ftp"
+    GSIFTP = "gsiftp"
+    GLOBUS = "globus"
+    HTSGET = "htsget"
+    HTTPS = "https"
+    FILE = "file"
 
 
 class Checksum(BaseModel):
@@ -30,7 +41,7 @@ class Authorizations(BaseModel):
 
 
 class AccessMethod(BaseModel):
-    type: str
+    type: AccessMethodType
     access_url: AccessURL | None = None
     access_id: str | None = None
     region: str | None = None
@@ -42,15 +53,6 @@ class AccessMethod(BaseModel):
             raise ValueError(
                 "access_method must have at least one of access_id or access_url set"
             )
-        return self
-
-    @model_validator(mode="after")
-    def check_access_method_type(self) -> Self:
-        valid: set[str] = set(
-            ["s3", "gs", "ftp", "gsiftp", "globus", "htsget", "https", "file"]
-        )
-        if self.type not in valid:
-            raise ValueError(f"Invalid type for access_method: {self.type}")
         return self
 
 
@@ -187,7 +189,10 @@ def get_access_url(
     raise CGPClientException(f"Unsupported protocol for access URL: {object_url}")
 
 
-def put_object(drs_object: DrsObject, endpoint: str, headers: dict[str, str]) -> None:
+def put_object(
+    drs_object: DrsObject, api_base_url: str, headers: dict[str, str] | None = None
+) -> None:
+    endpoint: str = drs_uri(drs_object.id, api_base_url)
     logging.info("Posting DRS object: %s to: %s", drs_object.id, endpoint)
     response: requests.Response = requests.post(
         url=endpoint,
@@ -206,10 +211,6 @@ def put_object(drs_object: DrsObject, endpoint: str, headers: dict[str, str]) ->
 
 def drs_uri(object_id: str, api_base_url: str) -> str:
     return f"{drs_base_url(api_base_url)}/objects/{object_id}"
-
-
-def create_uuid() -> str:
-    return str(uuid.uuid4())
 
 
 def access_method_for_s3(
