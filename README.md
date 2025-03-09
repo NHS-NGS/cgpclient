@@ -10,7 +10,7 @@ We anticipate moving to a private Beta phase in the second quarter of 2025, duri
 
 ## Installation
 
-Here we assume you use conda for managing python environments, but please substitute this for your preferred tool, or you can skp this step and install the package into your main python installation.
+Here we assume you use conda for managing python environments, but please substitute this for your preferred tool, or you can skip this step and install the package into your main python installation.
 
 ```bash
 conda create --name=cgpclient python=3.13
