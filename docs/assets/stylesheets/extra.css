@@ -1,0 +1,168 @@
+/* Brand Colours */
+:root,
+[data-md-color-scheme="default"],
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #005EB8;
+  --md-primary-fg-color--light: #b7d3ef;
+  --md-primary-fg-color--dark: #8cbef0;
+}
+
+:root {
+  --md-admonition-icon--gel-magnify: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3a6.5 6.5 0 0 1 5.28 10.39l4.71 4.71-1.41 1.41-4.71-4.71A6.5 6.5 0 1 1 9.5 3m0 2a4.5 4.5 0 1 0 4.5 4.5A4.5 4.5 0 0 0 9.5 5Z"/></svg>');
+}
+.md-typeset .admonition.gel-magnify,
+.md-typeset details.gel-magnify {
+  border-color: rgb(127, 127, 127);
+}
+.md-typeset .gel-magnify > .admonition-title,
+.md-typeset .gel-magnify > summary {
+  background-color: rgba(241, 242, 242, 0.5);
+}
+.md-typeset .gel-magnify > .admonition-title::before,
+.md-typeset .gel-magnify > summary::before {
+  background-color: rgb(127, 127, 127);
+  -webkit-mask-image: var(--md-admonition-icon--gel-magnify);
+          mask-image: var(--md-admonition-icon--gel-magnify);
+}
+
+:root {
+  --md-admonition-icon--gel-attention: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M7 2v11h3v9l7-12h-4l4-8H7Z"/></svg>');
+}
+.md-typeset .admonition.gel-attention,
+.md-typeset details.gel-attention {
+  border-color: rgb(223, 0, 125);
+}
+.md-typeset .gel-attention > .admonition-title,
+.md-typeset .gel-attention > summary {
+  background-color: rgb(255, 198, 230, 0.5);
+}
+.md-typeset .gel-attention > .admonition-title::before,
+.md-typeset .gel-attention > summary::before {
+  background-color: rgb(223, 0, 125);
+  -webkit-mask-image: var(--md-admonition-icon--gel-attention);
+          mask-image: var(--md-admonition-icon--gel-attention);
+}
+
+:root {
+  --md-admonition-icon--gel-question: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M13 18h-2v-2h2v2m0-3h-2c0-3.25 3-3 3-5 0-1.1-.9-2-2-2s-2 .9-2 2H8c0-2.21 1.79-4 4-4s4 1.79 4 4c0 2.5-3 2.75-3 5m9-3c0 5.18-3.95 9.45-9 9.95v-2.01c3.95-.49 7-3.86 7-7.94s-3.05-7.45-7-7.94V2.05c5.05.5 9 4.77 9 9.95M11 2.05v2.01c-1.46.18-2.8.76-3.91 1.62L5.67 4.26C7.15 3.05 9 2.25 11 2.05M4.06 11H2.05c.2-2 1-3.85 2.21-5.33L5.68 7.1A7.902 7.902 0 0 0 4.06 11M11 19.94v2.01c-2-.2-3.85-.99-5.33-2.21l1.42-1.42c1.11.86 2.45 1.44 3.91 1.62M2.05 13h2.01c.18 1.46.76 2.8 1.62 3.91l-1.42 1.42A10.013 10.013 0 0 1 2.05 13Z"></path></svg>');
+}
+.md-typeset .admonition.gel-question,
+.md-typeset details.gel-question {
+  border-color: rgb(38, 145, 60);
+}
+.md-typeset .gel-question > .admonition-title,
+.md-typeset .gel-question > summary {
+  background-color: rgb(203, 241, 211, 0.5);
+}
+.md-typeset .gel-question > .admonition-title::before,
+.md-typeset .gel-question > summary::before {
+  background-color: rgb(38, 145, 60);
+  -webkit-mask-image: var(--md-admonition-icon--gel-question);
+          mask-image: var(--md-admonition-icon--gel-question);
+}  
+
+/* Typography */
+.md-typeset h1,
+.md-typeset h2,
+.md-typeset h3 {
+  font-family: "Avenir LT Pro", sans-serif;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.md-typeset h1 {
+  font-size: 1.8rem;
+  line-height: 2.2rem;
+  margin-bottom: 0.6em;
+}
+
+.md-typeset h2 {
+  font-size: 1.4rem;
+  line-height: 1.8rem;
+  margin-bottom: 0.5em;
+}
+
+.md-typeset h3 {
+  font-size: 1.1rem;
+  line-height: 1.4rem;
+  margin-bottom: 0.4em;
+}
+
+
+/* General Button Styles */
+:root {
+  --md-primary-fg-color: #005EB8;  /* Blue */
+  --md-primary-bg-color: white;  /* Background color */
+}
+
+*:is(.md-typeset .md-button, .md-banner .md-button) {
+  border-radius: 2rem;
+  transition: padding 0.2s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  font-weight: 600;
+  font-size: 0.9rem;
+  text-align: center;  /* Ensures text stays centered */
+}
+
+/* Twemoji icons inside buttons */
+*:is(.md-typeset .md-button, .md-banner .md-button) .twemoji {
+  height: 1.15rem;
+  position: absolute;
+  right: 0.5rem;
+  top: 25%;
+  opacity: 0;
+}
+
+.md-banner .md-button {
+  padding: 0.3em 0.8em;
+  font-size: 0.8em;
+}
+
+.md-banner .md-button .twemoji {
+  height: 0.6rem;
+}
+
+/* Icons inside buttons */
+*:is(.md-typeset .md-button, .md-banner .md-button) svg {
+  transition: opacity 0.1s;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  opacity: 1;
+  height: 1.15rem;
+  width: 1.15rem;
+}
+
+/* Hover and Active States */
+*:is(.md-typeset .md-button, .md-banner .md-button):hover,
+*:is(.md-typeset .md-button, .md-banner .md-button):focus,
+*:is(.md-typeset .md-button, .md-banner .md-button):active {
+  padding-right: 2.4rem;
+  background-color: transparent;
+  border-color: var(--md-primary-fg-color);
+  color: var(--md-primary-fg-color);
+}
+
+.md-banner .md-button:hover,
+.md-banner .md-button:focus,
+.md-banner .md-button:active {
+  padding-right: 1.6rem;
+}
+
+/* Primary button (filled) hover */
+*:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:hover,
+*:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:focus,
+*:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:active {
+  background-color: var(--md-primary-fg-color);
+  color: var(--md-primary-bg-color);
+}
+
+/* Show emoji on hover */
+*:is(.md-typeset .md-button, .md-banner .md-button):hover .twemoji,
+*:is(.md-typeset .md-button, .md-banner .md-button):focus .twemoji,
+*:is(.md-typeset .md-button, .md-banner .md-button):active .twemoji {
+  opacity: 1;
+}
+
+.md-banner {
+  background-color: #FF53B3;
+}

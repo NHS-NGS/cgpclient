@@ -1,0 +1,67 @@
+site_name: Clinical Genomics Platform Clients
+nav:
+  - Home: index.md
+  - Configuration: configuration.md
+  - Examples:
+    - Authentication: authentication.md
+    - Fetching files: fetching_files.md
+    - Submitting files: submitting_files.md
+  - Contributing: contributing.md
+theme:
+  name: material
+  custom_dir: docs/assets/overrides
+  language: en
+  logo: assets/img/GEL_logo_RGB_Light.png
+  favicon: assets/img/GEL_logo_RGB_Dark.png
+  palette:
+    - scheme: gel
+      toggle:
+        icon: material/lightbulb-outline
+        name: Switch to dark mode
+    - scheme: gel
+      toggle:
+        icon: material/lightbulb
+        name: Switch to lighti mode
+  font:
+    text: Avenir LT Pro
+    code: Roboto Mono
+  features:
+    - navigation.tabs
+    - navigation.expand
+    - content.code.annotate
+    - content.tabs.link
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.top
+    - navigation.tracking
+    - search.share
+    - toc.follow
+extra_css:
+  - assets/stylesheets/extra.css
+markdown_extensions:
+  - attr_list
+  - pymdownx.superfences
+  - abbr
+  - admonition
+  - pymdownx.details
+  - tables
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      auto_append:
+        - docs/assets/includes/abbreviations.md
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: True
+  - meta
+  - pymdownx.emoji 
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+copyright: Copyright &copy; 2022-2025 Genomics England Limited
