@@ -1,14 +1,19 @@
-# Welcome to CGP Client Documentation
+# Welcome to the CGP Client Library
 
-## Installation
+This repository provides a Python client designed to streamline interactions with the Clinical Genomics Platform (CGP) APIs, hosted on the [NHS API Platform](https://digital.nhs.uk/services/api-platform) (APIM).
 
-Please refer to repo's README.md for installation instructions
+[**Get started with the CGP Client** :material-arrow-right:](set_up/get_started.md){ .md-button .md-button--primary }
 
+[**Discover our library** :material-arrow-right:](uses/code.md){ .md-button .md-button--secondary }
 
-## Code
+[**Start contributing** :material-arrow-right:](contributing.md){ .md-button .md-button--secondary }
 
-???+ info 
+!!! gel-attention "Alpha Stage"
 
-    This is just a placeholder example of how the code docstrings can be rendered by mkdocs, it shouldn't be here eventually
+    Please be aware that this package and the underlying CGP APIs are currently in the **Alpha** phase of development. This means:
 
-::: cgpclient.client.CGPClient
+    * APIs are subject to potential breaking changes.
+    * No Service Level Agreements (SLAs) are offered at this stage.
+
+    We plan to transition to a private **Beta** phase in the second quarter of 2025, where we will begin testing with realistic data, moving beyond the current test data.
+

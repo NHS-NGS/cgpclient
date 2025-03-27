@@ -1,12 +1,28 @@
 /* Brand Colours */
 :root,
-[data-md-color-scheme="default"],
-[data-md-color-scheme="slate"] {
-  --md-primary-fg-color: #005EB8;
-  --md-primary-fg-color--light: #b7d3ef;
-  --md-primary-fg-color--dark: #8cbef0;
+[data-md-color-scheme="default"] {
+  --md-primary-fg-color: #607D8B;  /* Blue-Grey */
+  --md-primary-fg-color--light: #CFD8DC;  /* Lighter Blue-Grey */
+  --md-primary-fg-color--dark: #455A64;  /* Darker Blue-Grey */
+  --md-accent-fg-color: #2196F3;  /* Bright Blue */
+  --md-accent-fg-color--light: #64B5F6;  /* Light Blue */
+  --md-accent-fg-color--dark: #1976D2;  /* Dark Blue */
+  --md-banner-bg-color: #ffffff;  /* Light mode banner background */
+  --md-text-color: #000000;  /* Text color for light mode */
 }
 
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color: #607D8B;  /* Blue-Grey */
+  --md-primary-fg-color--light: #CFD8DC;  /* Lighter Blue-Grey */
+  --md-primary-fg-color--dark: #455A64;  /* Darker Blue-Grey */
+  --md-accent-fg-color: #2196F3;  /* Bright Blue */
+  --md-accent-fg-color--light: #64B5F6;  /* Light Blue */
+  --md-accent-fg-color--dark: #1976D2;  /* Dark Blue */
+  --md-banner-bg-color: #ffffff;  /* Light mode banner background */
+  --md-text-color: #000000;  /* Text color for light mode */
+}
+
+/* Admonition Icons */
 :root {
   --md-admonition-icon--gel-magnify: url('data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3a6.5 6.5 0 0 1 5.28 10.39l4.71 4.71-1.41 1.41-4.71-4.71A6.5 6.5 0 1 1 9.5 3m0 2a4.5 4.5 0 1 0 4.5 4.5A4.5 4.5 0 0 0 9.5 5Z"/></svg>');
 }
@@ -59,7 +75,7 @@
   background-color: rgb(38, 145, 60);
   -webkit-mask-image: var(--md-admonition-icon--gel-question);
           mask-image: var(--md-admonition-icon--gel-question);
-}  
+}
 
 /* Typography */
 .md-typeset h1,
@@ -71,9 +87,9 @@
 }
 
 .md-typeset h1 {
-  font-size: 1.8rem;
+  font-size: 2.2rem;
   line-height: 2.2rem;
-  margin-bottom: 0.6em;
+  margin-bottom: 0.3em;
 }
 
 .md-typeset h2 {
@@ -88,10 +104,9 @@
   margin-bottom: 0.4em;
 }
 
-
 /* General Button Styles */
 :root {
-  --md-primary-fg-color: #005EB8;  /* Blue */
+  --md-primary-fg-color: #6c6c6c;  /* Grey */
   --md-primary-bg-color: white;  /* Background color */
 }
 
@@ -138,8 +153,8 @@
 *:is(.md-typeset .md-button, .md-banner .md-button):active {
   padding-right: 2.4rem;
   background-color: transparent;
-  border-color: var(--md-primary-fg-color);
-  color: var(--md-primary-fg-color);
+  border-color: #6c6c6c;
+  color: #6c6c6c;
 }
 
 .md-banner .md-button:hover,
@@ -152,7 +167,7 @@
 *:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:hover,
 *:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:focus,
 *:is(.md-typeset .md-button, .md-banner .md-button).md-button--primary:active {
-  background-color: var(--md-primary-fg-color);
+  background-color: #6c6c6c;
   color: var(--md-primary-bg-color);
 }
 
@@ -163,6 +178,29 @@
   opacity: 1;
 }
 
-.md-banner {
-  background-color: #FF53B3;
+/* Dark Mode Adjustments */
+[data-md-color-scheme="dark"] {
+  --md-primary-fg-color: #6c6c6c;  /* Grey (same in dark mode) */
+  --md-banner-bg-color: #333333;  /* Dark mode banner background */
+  --md-text-color: #FFFFFF;  /* Text color for dark mode */
+  --md-link-color: #6c6c6c;  /* Link color changed to grey */
+  --md-link-hover-color: #9c9c9c;  /* Hover link color */
+  --md-button-bg-color: #444444;  /* Dark mode button background */
+  --md-button-border-color: #ffffff;  /* Dark mode button border */
+  --md-button-text-color: #ffffff;  /* Dark mode button text color */
+}
+
+/* Link Styles */
+a {
+  color: var(--md-link-color);  /* Link color remains same */
+  text-decoration: none;
+  transition: color 0.2s ease-in-out;
+}
+
+a:hover {
+  color: var(--md-link-hover-color);  /* Hover link color remains same */
+}
+
+a:active {
+  color: #BEDFFF;  /* Active link color */
 }

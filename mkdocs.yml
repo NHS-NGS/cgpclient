@@ -1,12 +1,21 @@
-site_name: Clinical Genomics Platform Clients
+site_name: CGPClient
+site_url: https://github.com/NHS-NGS/cgpclient
+repo_name: NHS-NGS/cgpclient
+
 nav:
   - Home: index.md
-  - Configuration: configuration.md
-  - Examples:
-    - Authentication: authentication.md
-    - Fetching files: fetching_files.md
-    - Submitting files: submitting_files.md
+  - Set up:
+    - set_up/get_started.md
+    - set_up/key_auth.md
+    - set_up/jwt_auth.md
+    - set_up/configuration.md
+  - Uses:
+    - uses/code.md
+    - uses/fetching_files.md
+    - uses/submitting_files.md
+
   - Contributing: contributing.md
+
 theme:
   name: material
   custom_dir: docs/assets/overrides
@@ -14,22 +23,30 @@ theme:
   logo: assets/img/GEL_logo_RGB_Light.png
   favicon: assets/img/GEL_logo_RGB_Dark.png
   palette:
-    - scheme: gel
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      scheme: default
       toggle:
-        icon: material/lightbulb-outline
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
         name: Switch to dark mode
-    - scheme: gel
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
       toggle:
-        icon: material/lightbulb
-        name: Switch to lighti mode
+        icon: material/brightness-4
+        name: Switch to system preference
   font:
     text: Avenir LT Pro
     code: Roboto Mono
   features:
-    - navigation.tabs
     - navigation.expand
     - content.code.annotate
-    - content.tabs.link
     - content.action.edit
     - content.code.copy
     - navigation.footer
@@ -38,8 +55,10 @@ theme:
     - navigation.tracking
     - search.share
     - toc.follow
+
 extra_css:
   - assets/stylesheets/extra.css
+
 markdown_extensions:
   - attr_list
   - pymdownx.superfences
@@ -60,6 +79,10 @@ markdown_extensions:
       permalink: True
   - meta
   - pymdownx.emoji 
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      
 plugins:
   - search
   - mkdocstrings:
