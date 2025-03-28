@@ -59,3 +59,5 @@ OAUTH_TOKEN=$(python cgpclient/scripts/get_nhs_oauth_token.py)
 
 * **Default:** The library defaults to JWT token authentication if both `--private_key_pem_file` and `--apim_kid` are provided.
 * **API Key:** To use API key authentication, omit `--private_key_pem_file` and `--apim_kid`, and only provide `--api_key`.
+
+--8<-- "includes/abbreviations.md"

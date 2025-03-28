@@ -1,13 +1,14 @@
-(following the [JellyPy](https://github.com/NHS-NGS/JellyPy) model!)
+# Want to contribute?
 
-Please raise an issue to request new functions or features: https://github.com/NHS-NGS/cgpclient/issues
+We’d love your help in improving this client for NHS GMS partners! Whether it’s reporting issues, suggesting new features, or contributing code, here’s how you can get involved:
 
-To develop a new function or feature, please take a look at the issues raised. If there's something that you would like to code up, then (you are awesome and) start a discussion in the #gdam channel at https://binfx.slack.com/messages
+## Report Issues & Request Features  
+Spotted a bug or have an idea for a new feature? Please open an issue on GitHub: [NHS-NGS/cgpclient Issues](https://github.com/NHS-NGS/cgpclient/issues). 
 
+## Contribute Code  
+Interested in developing a new function or feature? Follow these steps:
 
-!!! gel-question "How to Contribute"
+* Check existing issues to see what's already been requested.  
+* If you’d like to work on something, start a discussion in the **#gdam** channel on Slack: [Join the conversation](https://binfx.slack.com/messages).  
 
-    This client is intended for NHS GMS partners to experiment with these emerging services and provide feedback. We encourage you to:
-
-    * Report issues via GitHub.
-    * We welcome your contributions! Please see our [contribution guidelines](contributing.md) for more information.
+--8<-- "includes/abbreviations.md"
