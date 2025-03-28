@@ -30,3 +30,4 @@
 *[WGA]: Whole Genome Analysis
 *[WGS]: Whole Genome Sequencing
 *[W3C]: World Wide Web Consortium
+*[CGP]: Clinical Genomics Platform

@@ -1,15 +1,17 @@
 # Get Started
 
-To begin using the CGP client library, you'll need to register an application on the NHS Developer Hub. This will provide you with the necessary credentials to access the CGP APIs.
+To begin using the CGP client library, you'll need to follow these steps:
 
 !!! gel-magnify "Register Your Application"
+
+    First, you'll need to register an application on the NHS Developer Hub. This will provide you with the necessary credentials to access the CGP APIs.
 
     * **Production/Live Applications:** [NHS Developer Hub (Production)](https://digital.nhs.uk/developer)
     * **Development Applications:** [NHS Developer Hub (Development)](https://dos-internal.ptl.api.platform.nhs.uk/)
 
     When registering, select the appropriate environment for your application (`Development`, `Integration`, or `Production`). This environment must match the `--api_host` parameter you use in your scripts.
 
-!!! gel-magnify "Authentication"
+!!! gel-magnify "Authenticate"
 
     The CGP client supports multiple authentication methods:
 
@@ -24,6 +26,9 @@ To begin using the CGP client library, you'll need to register an application on
         * For testing and experimentation in the APIM sandbox.
         * Useful for quickly exploring API functionality without setting up authentication.
 
-!!! gel-magnify "Configuration"
+!!! gel-magnify "Add Configuration"
 
     You can configure the CGP client library using a YAML configuration file, simplifying command-line usage. This file allows you to specify API host, API keys, private keys, and other settings. For more details on configuration options and file structure, please see the [configuration documentation](configuration.md).
+
+
+--8<-- "includes/abbreviations.md"

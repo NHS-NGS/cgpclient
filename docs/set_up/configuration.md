@@ -28,3 +28,5 @@ With this configuration file, you can run the `cgpclient/scripts/fetch_genomic_f
 ``` bash
 python cgpclient/scripts/fetch_genomic_files.py -r r30000000001
 ```
+
+--8<-- "includes/abbreviations.md"

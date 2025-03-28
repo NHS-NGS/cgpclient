@@ -67,3 +67,4 @@ If you use a configuration file in the default location `~/.cgpclient/config.yam
 ```bash
 python cgpclient/scripts/fetch_genomic_files.py -r r30000000001
 ```
+--8<-- "includes/abbreviations.md"

@@ -34,3 +34,5 @@ The generated private key (<KID>.pem) and KID (e.g., "test-1") are required when
 **4. Verify JWT Authentication (Optional):**
 
 To confirm your signed JWT authentication setup is working, use the `cgpclient/scripts/get_nhs_oauth_token.py` script to retrieve an OAuth token.
+
+--8<-- "includes/abbreviations.md"
