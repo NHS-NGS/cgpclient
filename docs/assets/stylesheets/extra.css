@@ -204,3 +204,13 @@ a:hover {
 a:active {
   color: #BEDFFF;  /* Active link color */
 }
+
+/* Custom Banner Styling */
+.md-banner {
+  background-color: rgb(223, 0, 125);
+  padding: 2px;
+  border-radius: 2px;
+  color: white;
+  text-align: center;
+  font-weight: bold;
+}
