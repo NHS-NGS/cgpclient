@@ -1,0 +1,90 @@
+site_name: CGPClient
+site_url: https://nhs-ngs.github.io/cgpclient
+repo_name: NHS-NGS/cgpclient
+
+nav:
+  - Home: index.md
+  - Set up:
+    - set_up/get_started.md
+    - set_up/key_auth.md
+    - set_up/jwt_auth.md
+    - set_up/configuration.md
+  - Uses:
+    - uses/code.md
+    - uses/fetching_files.md
+    - uses/submitting_files.md
+
+  - Contributing: contributing.md
+
+theme:
+  name: material
+  custom_dir: docs/assets/overrides
+  language: en
+  logo: assets/img/GEL_logo_RGB_Light.png
+  favicon: assets/img/GEL_logo_RGB_Dark.png
+  palette:
+    # Palette toggle for automatic mode
+    - media: "(prefers-color-scheme)"
+      scheme: default
+      toggle:
+        icon: material/brightness-auto
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    # Palette toggle for dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/brightness-4
+        name: Switch to system preference
+  font:
+    text: Avenir LT Pro
+    code: Roboto Mono
+  features:
+    - navigation.expand
+    - content.code.annotate
+    - content.action.edit
+    - content.code.copy
+    - navigation.footer
+    - navigation.instant
+    - navigation.top
+    - navigation.tracking
+    - search.share
+    - toc.follow
+
+extra_css:
+  - assets/stylesheets/extra.css
+
+markdown_extensions:
+  - attr_list
+  - pymdownx.superfences
+  - abbr
+  - admonition
+  - pymdownx.details
+  - tables
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      auto_append:
+        - docs/assets/includes/abbreviations.md
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - toc:
+      permalink: True
+  - meta
+  - pymdownx.emoji 
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+      
+plugins:
+  - search
+  - mkdocstrings:
+      default_handler: python
+copyright: Copyright &copy; 2022-2025 Genomics England Limited
