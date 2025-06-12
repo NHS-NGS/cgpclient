@@ -15,6 +15,7 @@ nav:
     - uses/submitting_files.md
 
   - Contributing: contributing.md
+  - Workshops: workshops.md
 
 theme:
   name: material
