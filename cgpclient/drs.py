@@ -194,11 +194,12 @@ def put_object(
 ) -> None:
     endpoint: str = drs_uri(drs_object.id, api_base_url)
     logging.info("Posting DRS object: %s to: %s", drs_object.id, endpoint)
+    logging.debug(drs_object.model_dump_json())
     response: requests.Response = requests.post(
         url=endpoint,
         headers=headers,
         timeout=REQUEST_TIMEOUT_SECS,
-        json=drs_object.model_dump_json(),
+        json=drs_object.model_dump(),
     )
     if not response.ok:
         raise CGPClientException(

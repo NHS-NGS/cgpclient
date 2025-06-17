@@ -4,6 +4,8 @@ from pathlib import Path
 
 REQUEST_TIMEOUT_SECS = 30
 
+APIM_BASE_URL = "api.service.nhs.uk"
+
 
 class CGPClientException(Exception):
     pass

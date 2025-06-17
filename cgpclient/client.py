@@ -7,7 +7,7 @@ import jwt
 import requests  # type: ignore
 from pydantic import BaseModel
 
-from cgpclient.drs import DrsObject, get_access_url, put_object
+from cgpclient.drs import DrsObject, get_access_url
 from cgpclient.drsupload import upload_file
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
@@ -20,7 +20,7 @@ from cgpclient.fhir import (  # type: ignore
     get_service_request,
     put_resource,
 )
-from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException
+from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException
 
 
 class GenomicFile(BaseModel):
@@ -169,7 +169,14 @@ class CGPClient:
         if self.api_key is not None:
             # use the supplied API key
             logging.debug("Using API key authentication")
-            return {"apikey": self.api_key}
+            if APIM_BASE_URL in self.api_host:
+                # use APIM header
+                logging.debug("Using APIM API key header")
+                return {"apikey": self.api_key}
+
+            # otherwise use standard header
+            logging.debug("Using standard API key header")
+            return {"X-API-Key": self.api_key}
 
         # no auth by default
         logging.debug("No API authentication")
@@ -222,6 +229,14 @@ class CGPClient:
 
         return GenomicFiles(files=files)
 
+    def upload_file_to_drs(self, filename: Path, mime_type: str) -> DrsObject:
+        return upload_file(
+            filename=filename,
+            mime_type=mime_type,
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+        )
+
     def upload_file(
         self,
         filename: Path,
@@ -232,22 +247,15 @@ class CGPClient:
     ) -> CGPDocumentReference:
         """Upload the file to the CGP, create a DRS object and
         corresponding FHIR resources"""
+
         patient: Patient = self.get_patient(ngis_participant_id)
         service_request: CGPServiceRequest = self.get_service_request(ngis_referral_id)
 
-        drs_object: DrsObject = upload_file(
-            filename=filename,
-            mime_type=mime_type,
-            api_base_url=self.api_base_url,
-            headers=self.headers,
-            post_resource=False,
+        drs_object: DrsObject = self.upload_file_to_drs(
+            filename=filename, mime_type=mime_type
         )
 
-        put_object(
-            drs_object=drs_object,
-            api_base_url=self.api_base_url,
-            headers=self.headers,
-        )
+        print(drs_object.model_dump_json(exclude_defaults=True))
 
         document_reference: CGPDocumentReference = create_document_reference(
             drs_object=drs_object,

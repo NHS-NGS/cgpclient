@@ -28,19 +28,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "--mime_type",
         type=str,
         help="MIME type of the file",
-        required=True,
-    )
-    parser.add_argument(
-        "-r",
-        "--ngis_referral_id",
-        type=str,
-        help="NGIS referral ID, e.g r30000000001",
-    )
-    parser.add_argument(
-        "-p",
-        "--ngis_participant_id",
-        type=str,
-        help="NGIS participant ID, e.g p12345678303",
     )
     parser.add_argument(
         "-host",
