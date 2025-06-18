@@ -228,7 +228,10 @@ def access_method_for_s3(
     s3_region: str,
 ) -> AccessMethod:
     return AccessMethod(
-        type="s3", access_id=f"s3://{s3_bucket}/{s3_key}", region=s3_region
+        type=AccessMethodType.S3,
+        access_url=AccessURL(url=f"s3://{s3_bucket}/{s3_key}"),
+        access_id="s3",
+        region=s3_region,
     )
 
 
