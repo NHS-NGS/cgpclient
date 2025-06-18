@@ -190,11 +190,19 @@ def get_access_url(
 
 
 def put_object(
-    drs_object: DrsObject, api_base_url: str, headers: dict[str, str] | None = None
+    drs_object: DrsObject,
+    api_base_url: str,
+    headers: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> None:
     endpoint: str = drs_uri(drs_object.id, api_base_url)
     logging.info("Posting DRS object: %s to: %s", drs_object.id, endpoint)
     logging.debug(drs_object.model_dump_json())
+
+    if dry_run:
+        logging.info("Dry run, so skipping posting DRS object")
+        return
+
     response: requests.Response = requests.post(
         url=endpoint,
         headers=headers,

@@ -7,6 +7,7 @@ import jwt
 import requests  # type: ignore
 from pydantic import BaseModel
 
+from cgpclient.dragen import upload_sample_from_fastq_list
 from cgpclient.drs import DrsObject, get_access_url
 from cgpclient.drsupload import upload_file
 from cgpclient.fhir import (  # type: ignore
@@ -229,10 +230,33 @@ class CGPClient:
 
         return GenomicFiles(files=files)
 
-    def upload_file_to_drs(self, filename: Path, mime_type: str) -> DrsObject:
+    def upload_file_to_drs(
+        self, filename: Path, mime_type: str | None = None, dry_run: bool = False
+    ) -> DrsObject:
         return upload_file(
             filename=filename,
             mime_type=mime_type,
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+            dry_run=dry_run,
+        )
+
+    def upload_dragen_fastq_list(
+        self,
+        fastq_list_csv: Path,
+        ngis_participant_id: str,
+        ngis_referral_id: str,
+        ods_code: str,
+        fastq_list_sample_id: str | None = None,
+        dry_run: bool = False,
+    ) -> None:
+        upload_sample_from_fastq_list(
+            fastq_list_csv=fastq_list_csv,
+            fastq_list_sample_id=fastq_list_sample_id,
+            ngis_participant_id=ngis_participant_id,
+            ngis_referral_id=ngis_referral_id,
+            ods_code=ods_code,
+            dry_run=dry_run,
             api_base_url=self.api_base_url,
             headers=self.headers,
         )

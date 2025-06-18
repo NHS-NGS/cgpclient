@@ -54,6 +54,34 @@ class PedigreeRole(StrEnum):
     FAMILY_MEMBER = "family member"
 
 
+class BundleType(StrEnum):
+    DOCUMENT = "document"
+    MESSAGE = "message"
+    TRANSACTION = "transaction"
+    TRANSACTION_RESPONSE = "transaction-response"
+    BATCH = "batch"
+    BATCH_RESPONSE = "batch-response"
+    HISTORY = "history"
+    SEARCH_SET = "searchset"
+    COLLECTION = "collection"
+
+
+class BundleRequestMethod(StrEnum):
+    GET = "GET"
+    HEAD = "HEAD"
+    POST = "POST"
+    PUT = "PUT"
+    DELETE = "DELETE"
+    PATCH = "PATCH"
+
+
+class DocumentReferenceRelationship(StrEnum):
+    APPENDS = "appends"
+    TRANSFORMS = "transforms"
+    REPLACES = "replaces"
+    SIGNS = "signs"
+
+
 # pylint: disable=too-many-ancestors
 class CGPDocumentReference(DocumentReference):
     def ngis_document_category_codes(self) -> set[str]:
@@ -122,6 +150,10 @@ class CGPServiceRequest(ServiceRequest):
         return doc_refs
 
 
+def placeholder_reference_for(resource: DomainResource) -> Reference:
+    return Reference(reference=f"urn:uuid:{resource.id}")
+
+
 def fhir_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/FHIR/R4"
 
@@ -182,11 +214,22 @@ def put_resource(
     api_base_url: str,
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> None:
-    url: str = (
-        f"{fhir_base_url(api_base_url)}/{resource.resource_type()}/{resource.id()}"
-    )
-    logging.info("Posting resource %s to endpoint: %s", resource.id(), url)
+    url: str = f"{fhir_base_url(api_base_url)}/{resource.resource_type}/{resource.id}"
+
+    if resource.resource_type == "Bundle" and resource.type == BundleType.TRANSACTION:
+        # transaction bundles are posted to the root of the FHIR server
+        logging.info("Posting transaction bundle to the root endpoint")
+        url = f"{fhir_base_url(api_base_url)}/"
+
+    logging.info("Posting resource %s to endpoint: %s", resource.id, url)
+    logging.debug(resource.json())
+
+    if dry_run:
+        logging.info("Dry run, so skipping posting resource")
+        return
+
     response: requests.Response = requests.post(
         url=url,
         headers=headers,
@@ -277,11 +320,11 @@ def get_patient(
 def create_specimen(
     service_request: ServiceRequest,
     patient: Patient,
-    lab_sample_id: str,
-    lab_sample_id_system: str,
+    sample_id: str,
+    sample_id_system: str,
 ) -> Specimen:
     return Specimen(
-        identifier=[Identifier(system=lab_sample_id_system, value=lab_sample_id)],
+        identifier=[Identifier(system=sample_id_system, value=sample_id)],
         subject=reference_for(patient),
         request=reference_for(service_request),
         status=SpecimenStatus.AVAILABLE,
