@@ -90,6 +90,9 @@ def document_reference_for_drs_object(
                 attachment=Attachment(
                     url=drs_object.self_uri,
                     contentType=drs_object.mime_type,
+                    title=drs_object.name,
+                    size=drs_object.size,
+                    hash=drs_object.checksums[0].checksum,
                 )
             ),
         ],
