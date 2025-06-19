@@ -12,7 +12,7 @@ from cgpclient.utils import APIM_BASE_URL
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Read a Dragen FASTQ list CSV file, upload the FASTQs and sample metadata"
+            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata"
         )
     )
 
@@ -34,7 +34,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
             "Sample identifer (RGSM) to include in the upload, "
             "if not supplied this script will use the first RGSM value found"
         ),
-        required=False,
     )
     parser.add_argument(
         "-p",

@@ -133,7 +133,7 @@ def main(cmdline_args: list[str]) -> None:
         override_api_base_url=args.override_api_base_url,
     )
 
-    client.upload_file_to_drs(
+    client.upload_file_with_drs(
         filename=args.file, mime_type=args.mime_type, dry_run=args.dry_run
     )
 

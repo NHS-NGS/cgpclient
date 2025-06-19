@@ -9,17 +9,13 @@ from pydantic import BaseModel
 
 from cgpclient.dragen import upload_sample_from_fastq_list
 from cgpclient.drs import DrsObject, get_access_url
-from cgpclient.drsupload import upload_file
+from cgpclient.drsupload import upload_file_with_drs
 from cgpclient.fhir import (  # type: ignore
-    CGPDocumentReference,
     CGPServiceRequest,
     Patient,
     PedigreeRole,
-    Specimen,
-    create_document_reference,
     get_patient,
     get_service_request,
-    put_resource,
 )
 from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException
 
@@ -230,10 +226,11 @@ class CGPClient:
 
         return GenomicFiles(files=files)
 
-    def upload_file_to_drs(
+    def upload_file_with_drs(
         self, filename: Path, mime_type: str | None = None, dry_run: bool = False
     ) -> DrsObject:
-        return upload_file(
+        """Upload the give file using the DRS upload protocol"""
+        return upload_file_with_drs(
             filename=filename,
             mime_type=mime_type,
             api_base_url=self.api_base_url,
@@ -250,6 +247,7 @@ class CGPClient:
         fastq_list_sample_id: str | None = None,
         dry_run: bool = False,
     ) -> None:
+        """Read a DRAGEN format fastq_list.csv and upload the data to the CGP"""
         upload_sample_from_fastq_list(
             fastq_list_csv=fastq_list_csv,
             fastq_list_sample_id=fastq_list_sample_id,
@@ -260,36 +258,3 @@ class CGPClient:
             api_base_url=self.api_base_url,
             headers=self.headers,
         )
-
-    def upload_file(
-        self,
-        filename: Path,
-        mime_type: str,
-        ngis_participant_id,
-        ngis_referral_id,
-        specimen: Specimen | None = None,
-    ) -> CGPDocumentReference:
-        """Upload the file to the CGP, create a DRS object and
-        corresponding FHIR resources"""
-
-        patient: Patient = self.get_patient(ngis_participant_id)
-        service_request: CGPServiceRequest = self.get_service_request(ngis_referral_id)
-
-        drs_object: DrsObject = self.upload_file_to_drs(
-            filename=filename, mime_type=mime_type
-        )
-
-        print(drs_object.model_dump_json(exclude_defaults=True))
-
-        document_reference: CGPDocumentReference = create_document_reference(
-            drs_object=drs_object,
-            patient=patient,
-            service_request=service_request,
-            specimen=specimen,
-        )
-
-        put_resource(
-            document_reference, api_base_url=self.api_base_url, headers=self.headers
-        )
-
-        return document_reference

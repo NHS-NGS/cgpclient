@@ -6,22 +6,14 @@ from enum import StrEnum
 
 import requests
 from fhir.resources.R4B import construct_fhir_element
-from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle
-from fhir.resources.R4B.documentreference import (
-    DocumentReference,
-    DocumentReferenceContent,
-    DocumentReferenceContext,
-)
+from fhir.resources.R4B.documentreference import DocumentReference
 from fhir.resources.R4B.domainresource import DomainResource
-from fhir.resources.R4B.identifier import Identifier
 from fhir.resources.R4B.patient import Patient
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.relatedperson import RelatedPerson
 from fhir.resources.R4B.servicerequest import ServiceRequest
-from fhir.resources.R4B.specimen import Specimen
 
-from cgpclient.drs import DrsObject
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException
 
 
@@ -114,7 +106,7 @@ class CGPServiceRequest(ServiceRequest):
     ) -> dict[str, PedigreeRole]:
         # pylint: disable=no-member
         proband_id: str = self.subject.reference
-        bundle: Bundle = search_for_resource(
+        bundle: Bundle = search_for_fhir_resource(
             resource_type=RelatedPerson.get_resource_type(),
             params={"patient": proband_id},
             api_base_url=api_base_url,
@@ -135,7 +127,7 @@ class CGPServiceRequest(ServiceRequest):
         api_base_url: str,
         headers: dict[str, str] | None = None,
     ) -> list[CGPDocumentReference]:
-        bundle: Bundle = search_for_resource(
+        bundle: Bundle = search_for_fhir_resource(
             resource_type=DocumentReference.get_resource_type(),
             params={"related": self.id},
             api_base_url=api_base_url,
@@ -150,10 +142,6 @@ class CGPServiceRequest(ServiceRequest):
         return doc_refs
 
 
-def placeholder_reference_for(resource: DomainResource) -> Reference:
-    return Reference(reference=f"urn:uuid:{resource.id}")
-
-
 def fhir_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/FHIR/R4"
 
@@ -161,13 +149,17 @@ def fhir_base_url(api_base_url: str) -> str:
 def reference_for(
     resource: DomainResource,
     include_first_identifier: bool = False,
+    use_placeholder_id: bool = True,
     special_resource_types: frozenset[str] = frozenset(
         {"Patient", "Specimen", "ServiceRequest"}
     ),
 ) -> Reference:
-    reference: Reference = Reference(
-        reference=f"{resource.resource_type}/{resource.id}"
-    )
+    if use_placeholder_id:
+        reference_value = f"urn:uuid:{resource.id}"
+    else:
+        reference_value = f"{resource.resource_type}/{resource.id}"
+
+    reference: Reference = Reference(reference=reference_value)
 
     if resource.resource_type in special_resource_types:
         # we set this argument by default for these special resource types
@@ -182,7 +174,7 @@ def reference_for(
     return reference
 
 
-def get_resource(
+def get_fhir_resource(
     resource_type: str,
     resource_id: str,
     api_base_url: str,
@@ -209,7 +201,7 @@ def get_resource(
     )
 
 
-def put_resource(
+def post_fhir_resource(
     resource: DomainResource,
     api_base_url: str,
     params: dict[str, str] | None = None,
@@ -218,13 +210,16 @@ def put_resource(
 ) -> None:
     url: str = f"{fhir_base_url(api_base_url)}/{resource.resource_type}/{resource.id}"
 
-    if resource.resource_type == "Bundle" and resource.type == BundleType.TRANSACTION:
-        # transaction bundles are posted to the root of the FHIR server
-        logging.info("Posting transaction bundle to the root endpoint")
+    if resource.resource_type == "Bundle" and resource.type in (
+        BundleType.BATCH,
+        BundleType.TRANSACTION,
+    ):
+        # these bundle types are posted to the root of the FHIR server
+        logging.info("Posting transaction bundle to the root FHIR endpoint")
         url = f"{fhir_base_url(api_base_url)}/"
 
-    logging.info("Posting resource %s to endpoint: %s", resource.id, url)
-    logging.debug(resource.json())
+    logging.info("Posting resource to endpoint: %s", url)
+    logging.debug(resource.json(exclude_none=True))
 
     if dry_run:
         logging.info("Dry run, so skipping posting resource")
@@ -234,7 +229,7 @@ def put_resource(
         url=url,
         headers=headers,
         params=params,
-        json=resource.json(),
+        json=resource.json(exclude_none=True),
         timeout=REQUEST_TIMEOUT_SECS,
     )
     if not response.ok:
@@ -250,7 +245,7 @@ def put_resource(
         )
 
 
-def search_for_resource(
+def search_for_fhir_resource(
     resource_type: str,
     params: dict[str, str],
     api_base_url: str,
@@ -282,7 +277,7 @@ def search_for_resource(
 def get_service_request(
     ngis_referral_id: str, api_base_url: str, headers: dict[str, str] | None = None
 ) -> CGPServiceRequest:
-    bundle: Bundle = search_for_resource(
+    bundle: Bundle = search_for_fhir_resource(
         resource_type=ServiceRequest.get_resource_type(),
         params={"identifier": ngis_referral_id},
         api_base_url=api_base_url,
@@ -301,7 +296,7 @@ def get_service_request(
 def get_patient(
     ngis_participant_id: str, api_base_url: str, headers: dict[str, str] | None = None
 ):
-    bundle: Bundle = search_for_resource(
+    bundle: Bundle = search_for_fhir_resource(
         resource_type=Patient.get_resource_type(),
         params={"identifier": ngis_participant_id},
         api_base_url=api_base_url,
@@ -315,46 +310,3 @@ def get_patient(
         # pylint: disable=unsubscriptable-object
         return Patient.parse_obj(bundle.entry[0].resource.dict())
     raise CGPClientException("Unexpected number of Patients found")
-
-
-def create_specimen(
-    service_request: ServiceRequest,
-    patient: Patient,
-    sample_id: str,
-    sample_id_system: str,
-) -> Specimen:
-    return Specimen(
-        identifier=[Identifier(system=sample_id_system, value=sample_id)],
-        subject=reference_for(patient),
-        request=reference_for(service_request),
-        status=SpecimenStatus.AVAILABLE,
-    )
-
-
-def create_document_reference(
-    drs_object: DrsObject,
-    service_request: CGPServiceRequest,
-    patient: Patient,
-    specimen: Specimen | None = None,
-) -> CGPDocumentReference:
-    document_reference: CGPDocumentReference = CGPDocumentReference(
-        status=DocumentReferenceStatus.CURRENT,
-        docStatus=DocumentReferenceDocStatus.FINAL,
-        subject=reference_for(patient),
-        content=[
-            DocumentReferenceContent(
-                attachment=Attachment(
-                    url=drs_object.self_uri, contentType=drs_object.mime_type
-                )
-            )
-        ],
-        context=[DocumentReferenceContext(target=reference_for(service_request))],
-    )
-
-    if specimen is not None:
-        # pylint: disable=no-member
-        document_reference.relatesTo.append(
-            DocumentReferenceContext(target=reference_for(specimen))
-        )
-
-    return document_reference

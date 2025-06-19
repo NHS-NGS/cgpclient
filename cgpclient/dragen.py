@@ -21,15 +21,15 @@ from fhir.resources.R4B.specimen import Specimen, SpecimenCollection
 from pydantic import BaseModel, PositiveInt
 
 from cgpclient.drs import DrsObject
-from cgpclient.drsupload import upload_file
-from cgpclient.fhir import (
+from cgpclient.drsupload import upload_file_with_drs
+from cgpclient.fhir import (  # type: ignore
     BundleRequestMethod,
     BundleType,
     DocumentReferenceDocStatus,
     DocumentReferenceRelationship,
     DocumentReferenceStatus,
-    placeholder_reference_for,
-    put_resource,
+    post_fhir_resource,
+    reference_for,
 )
 from cgpclient.utils import create_uuid
 
@@ -89,12 +89,12 @@ def document_reference_for_drs_object(
             DocumentReferenceContent(
                 attachment=Attachment(
                     url=drs_object.self_uri,
-                    contentType="text/fastq",
+                    contentType=drs_object.mime_type,
                 )
             ),
         ],
         context=DocumentReferenceContext(
-            related=specimen.request + [placeholder_reference_for(specimen)]
+            related=specimen.request + [reference_for(specimen)]
         ),
     )
 
@@ -123,7 +123,7 @@ def fastq_list_entry_to_document_references(
     dry_run: bool = False,
 ) -> list[DocumentReference]:
     # Upload FASTQs using DRS
-    read1_drs_object: DrsObject = upload_file(
+    read1_drs_object: DrsObject = upload_file_with_drs(
         filename=entry.Read1File,
         api_base_url=api_base_url,
         headers=headers,
@@ -131,13 +131,17 @@ def fastq_list_entry_to_document_references(
     )
 
     read1_doc_ref: DocumentReference = document_reference_for_drs_object(
-        drs_object=read1_drs_object, specimen=specimen, ods_code=ods_code, pair_num=1
+        drs_object=read1_drs_object,
+        specimen=specimen,
+        ods_code=ods_code,
+        pair_num=1 if entry.Read2File else None,
     )
 
     doc_refs: list[DocumentReference] = [read1_doc_ref]
 
     if entry.Read2File:
-        read2_drs_object: DrsObject = upload_file(
+        # upload the second read group & relate it to the first
+        read2_drs_object: DrsObject = upload_file_with_drs(
             filename=entry.Read2File,
             api_base_url=api_base_url,
             headers=headers,
@@ -155,14 +159,14 @@ def fastq_list_entry_to_document_references(
         read2_doc_ref.relatesTo = [
             DocumentReferenceRelatesTo(
                 code=DocumentReferenceRelationship.APPENDS,
-                target=placeholder_reference_for(read1_doc_ref),
+                target=reference_for(read1_doc_ref),
             )
         ]
 
         read1_doc_ref.relatesTo = [
             DocumentReferenceRelatesTo(
                 code=DocumentReferenceRelationship.APPENDS,
-                target=placeholder_reference_for(read2_doc_ref),
+                target=reference_for(read2_doc_ref),
             )
         ]
 
@@ -236,7 +240,7 @@ def map_entries_to_fhir(
             BundleEntry(
                 fullUrl=f"urn:uuid:{resource.id}",
                 resource=resource,
-                request=BundleEntryRequest.construct(
+                request=BundleEntryRequest(
                     method=BundleRequestMethod.POST, url=resource.resource_type
                 ),
             )
@@ -249,8 +253,8 @@ def upload_sample_from_fastq_list(
     fastq_list_csv: Path,
     ngis_participant_id: str,
     ngis_referral_id: str,
-    api_base_url: str,
     ods_code: str,
+    api_base_url: str,
     headers: dict[str, str] | None = None,
     fastq_list_sample_id: str | None = None,
     dry_run: bool = False,
@@ -259,7 +263,7 @@ def upload_sample_from_fastq_list(
         fastq_list_csv=fastq_list_csv, fastq_list_sample_id=fastq_list_sample_id
     )
 
-    bundle: Bundle = map_entries_to_fhir(
+    fhir_resource_bundle: Bundle = map_entries_to_fhir(
         entries=entries,
         ngis_participant_id=ngis_participant_id,
         ngis_referral_id=ngis_referral_id,
@@ -269,8 +273,8 @@ def upload_sample_from_fastq_list(
         dry_run=dry_run,
     )
 
-    put_resource(
-        resource=bundle,  # type: ignore
+    post_fhir_resource(
+        resource=fhir_resource_bundle,  # type: ignore
         api_base_url=api_base_url,
         headers=headers,
         dry_run=dry_run,

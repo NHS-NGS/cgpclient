@@ -17,8 +17,8 @@ from cgpclient.client import (
 from cgpclient.drs import (
     DrsObject,
     get_access_url,
-    get_object,
-    get_object_from_url,
+    get_drs_object,
+    get_drs_object_from_url,
     map_drs_to_https_url,
 )
 from cgpclient.drsupload import (
@@ -27,10 +27,10 @@ from cgpclient.drsupload import (
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
-    get_upload_request,
+    create_upload_request,
     request_upload,
-    upload_file,
     upload_file_to_s3,
+    upload_file_with_drs,
 )
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
@@ -258,7 +258,7 @@ def test_request_upload(mock_server: MagicMock, tmp_path):
     filename: Path = Path(tmp_path / file_name)
     with open(filename, "w", encoding="utf-8") as file:
         file.write("foo")
-    upload_request: DrsUploadRequest = get_upload_request(
+    upload_request: DrsUploadRequest = create_upload_request(
         filename=filename,
         mime_type="application/fastq",
         upload_method_type=DrsUploadMethodType.S3,
@@ -357,7 +357,7 @@ def test_upload_file(
     with open(filename, "w", encoding="utf-8") as file:
         file.write(file_data)
 
-    upload_request: DrsUploadRequest = get_upload_request(
+    upload_request: DrsUploadRequest = create_upload_request(
         filename=filename,
         mime_type=mime_type,
         upload_method_type=DrsUploadMethodType.S3,
@@ -369,7 +369,7 @@ def test_upload_file(
     mock_s3_upload.return_value = "foo"
     mock_put_object.return_value = None
 
-    drs_object: DrsObject = upload_file(
+    drs_object: DrsObject = upload_file_with_drs(
         filename=filename,
         mime_type=mime_type,
         api_base_url="foo.com/api",
@@ -446,7 +446,7 @@ def test_get_object_from_url(mock_server: MagicMock, drs_object: dict):
 
     mock_server.return_value = MockedResponse()
 
-    drs_response: DrsObject = get_object_from_url(url="foo")
+    drs_response: DrsObject = get_drs_object_from_url(url="foo")
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
 
@@ -456,7 +456,9 @@ def test_get_object(mock_get_object: MagicMock, drs_object: dict):
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
     object_id: str = "foo"
     api_base_url: str = "url"
-    drs_response: DrsObject = get_object(object_id=object_id, api_base_url=api_base_url)
+    drs_response: DrsObject = get_drs_object(
+        object_id=object_id, api_base_url=api_base_url
+    )
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
     mock_get_object.assert_called_once_with(
         url=f"https://{api_base_url}/ga4gh/drs/v1.4/objects/{object_id}", headers=None
