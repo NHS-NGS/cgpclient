@@ -122,6 +122,13 @@ class CGPServiceRequest(ServiceRequest):
 
         return roles
 
+    @property
+    def ngis_referral_id(self) -> str:
+        for identifier in self.identifier:
+            if identifier.system == "https://genomicsengland.co.uk/ngis-referral-id":
+                return identifier.value
+        raise CGPClientException("No NGIS referral ID for ServiceRequest")
+
     def document_references(
         self,
         api_base_url: str,
@@ -129,7 +136,7 @@ class CGPServiceRequest(ServiceRequest):
     ) -> list[CGPDocumentReference]:
         bundle: Bundle = search_for_fhir_resource(
             resource_type=DocumentReference.get_resource_type(),
-            params={"related": self.id},
+            params={"related:identifier": self.ngis_referral_id, "_count": 100},
             api_base_url=api_base_url,
             headers=headers,
         )
@@ -210,12 +217,12 @@ def post_fhir_resource(
 ) -> None:
     url: str = f"{fhir_base_url(api_base_url)}/{resource.resource_type}/{resource.id}"
 
-    if resource.resource_type == "Bundle" and resource.type in (
+    if resource.resource_type == Bundle.__name__ and resource.type in (
         BundleType.BATCH,
         BundleType.TRANSACTION,
     ):
         # these bundle types are posted to the root of the FHIR server
-        logging.info("Posting transaction bundle to the root FHIR endpoint")
+        logging.info("Posting bundle to the root FHIR endpoint")
         url = f"{fhir_base_url(api_base_url)}/"
 
     logging.info("Posting resource to endpoint: %s", url)
@@ -229,7 +236,7 @@ def post_fhir_resource(
         url=url,
         headers=headers,
         params=params,
-        json=resource.json(exclude_none=True),
+        data=resource.json(exclude_none=True),
         timeout=REQUEST_TIMEOUT_SECS,
     )
     if not response.ok:
