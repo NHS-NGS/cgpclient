@@ -291,6 +291,7 @@ def post_fhir_resource(
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
     dry_run: bool = False,
+    include_provenance: bool = True,
 ) -> None:
     """Post a FHIR resource to the FHIR server"""
     url: str = f"{fhir_base_url(api_base_url)}/{resource.resource_type}/{resource.id}"
@@ -302,9 +303,10 @@ def post_fhir_resource(
         # these bundle types are posted to the root of the FHIR server
         logging.info("Posting bundle to the root FHIR endpoint")
         url = f"{fhir_base_url(api_base_url)}/"
-        resource = add_provenance_for_bundle(bundle=resource, ods_code=ods_code)
+        if include_provenance:
+            resource = add_provenance_for_bundle(bundle=resource, ods_code=ods_code)
     else:
-        if "X-Provenance" not in headers:
+        if include_provenance and "X-Provenance" not in headers:
             headers["X-Provenance"] = provenance_for(
                 resource=resource, ods_code=ods_code
             ).json(exclude_none=True)
