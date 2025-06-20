@@ -2,19 +2,25 @@
 # we ignore type checking here because of incompatibilities with fhir.resources
 
 import logging
+from datetime import datetime, timezone
 from enum import StrEnum
 
 import requests
 from fhir.resources.R4B import construct_fhir_element
-from fhir.resources.R4B.bundle import Bundle
+from fhir.resources.R4B.bundle import Bundle, BundleEntry, BundleEntryRequest
+from fhir.resources.R4B.device import Device, DeviceDeviceName, DeviceVersion
 from fhir.resources.R4B.documentreference import DocumentReference
 from fhir.resources.R4B.domainresource import DomainResource
+from fhir.resources.R4B.identifier import Identifier
+from fhir.resources.R4B.organization import Organization
 from fhir.resources.R4B.patient import Patient
+from fhir.resources.R4B.provenance import Provenance, ProvenanceAgent
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.relatedperson import RelatedPerson
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
-from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException
+import cgpclient
+from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, create_uuid
 
 
 class SpecimenStatus(StrEnum):
@@ -101,9 +107,12 @@ class CGPDocumentReference(DocumentReference):
 
 
 class CGPServiceRequest(ServiceRequest):
+    """A subclass of a FHIR ServiceRequest modelling an NGIS referral"""
+
     def get_pedigree_roles(
         self, api_base_url: str, headers: dict[str, str] | None = None
     ) -> dict[str, PedigreeRole]:
+        """Search the FHIR server for the roles of each participant in the pedigree"""
         # pylint: disable=no-member
         proband_id: str = self.subject.reference
         bundle: Bundle = search_for_fhir_resource(
@@ -124,6 +133,7 @@ class CGPServiceRequest(ServiceRequest):
 
     @property
     def ngis_referral_id(self) -> str:
+        """Retrieve the NGIS referral identfier from the ServiceRequest"""
         for identifier in self.identifier:
             if identifier.system == "https://genomicsengland.co.uk/ngis-referral-id":
                 return identifier.value
@@ -134,6 +144,7 @@ class CGPServiceRequest(ServiceRequest):
         api_base_url: str,
         headers: dict[str, str] | None = None,
     ) -> list[CGPDocumentReference]:
+        """Fetch associated DocumentReference resources from the FHIR server"""
         bundle: Bundle = search_for_fhir_resource(
             resource_type=DocumentReference.get_resource_type(),
             params={"related:identifier": self.ngis_referral_id, "_count": 100},
@@ -149,7 +160,35 @@ class CGPServiceRequest(ServiceRequest):
         return doc_refs
 
 
+CGPClientDevice: Device = Device(
+    id=create_uuid(),
+    version=[DeviceVersion(value=cgpclient.__version__)],
+    deviceName=[DeviceDeviceName(name="cgpclient", type="manufacturer-name")],
+)
+
+
+def provenance_for(resource: DomainResource, ods_code: str) -> Provenance:
+    return Provenance(
+        id=create_uuid(),
+        target=[reference_for(resource)],
+        recorded=datetime.now(timezone.utc).isoformat(),
+        agent=[
+            ProvenanceAgent(
+                who=reference_for(CGPClientDevice),
+                onBehalfOf=Reference(
+                    identifier=Identifier(
+                        system="https://fhir.nhs.uk/Id/ods-organization-code",
+                        value=ods_code,
+                    ),
+                    type=Organization.__name__,
+                ),
+            )
+        ],
+    )
+
+
 def fhir_base_url(api_base_url: str) -> str:
+    """Return the base URL for the FHIR server"""
     return f"https://{api_base_url}/FHIR/R4"
 
 
@@ -161,6 +200,7 @@ def reference_for(
         {"Patient", "Specimen", "ServiceRequest"}
     ),
 ) -> Reference:
+    """Create a FHIR Reference resource referring to the resource"""
     if use_placeholder_id:
         reference_value = f"urn:uuid:{resource.id}"
     else:
@@ -188,6 +228,7 @@ def get_fhir_resource(
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
 ) -> DomainResource:
+    """Fetch a FHIR resource from the FHIR server"""
     url: str = f"{fhir_base_url(api_base_url)}/{resource_type}/{resource_id}"
     logging.info("Requesting endpoint: %s", url)
     response: requests.Response = requests.get(
@@ -208,13 +249,50 @@ def get_fhir_resource(
     )
 
 
+def bundle_entry_for(
+    resource: DomainResource, method: BundleRequestMethod = BundleRequestMethod.POST
+) -> BundleEntry:
+    """Create a BundleEntry for the resource, using the specified method"""
+    return BundleEntry(
+        fullUrl=f"urn:uuid:{resource.id}",
+        resource=resource,
+        request=BundleEntryRequest(method=method, url=resource.resource_type),
+    )
+
+
+def bundle_for(
+    resources: list[DomainResource], bundle_type: BundleType = BundleType.TRANSACTION
+) -> Bundle:
+    """Create a FHIR Bundle including the list of resources"""
+    return Bundle(
+        type=bundle_type,
+        entry=[bundle_entry_for(resource) for resource in resources],
+    )
+
+
+def add_provenance_for_bundle(bundle: Bundle, ods_code: str) -> Bundle:
+    """Add Provenance resources for each of the resources in the Bundle"""
+    provenance_resources: list[BundleEntry] = [
+        bundle_entry_for(resource=provenance_for(entry.resource, ods_code=ods_code))
+        for entry in bundle.entry
+    ]
+
+    # include the original resources, the Provenance resources, and the Device resource
+    bundle.entry = (
+        bundle.entry + provenance_resources + [bundle_entry_for(CGPClientDevice)]
+    )
+    return bundle
+
+
 def post_fhir_resource(
     resource: DomainResource,
     api_base_url: str,
+    ods_code: str,
     params: dict[str, str] | None = None,
     headers: dict[str, str] | None = None,
     dry_run: bool = False,
 ) -> None:
+    """Post a FHIR resource to the FHIR server"""
     url: str = f"{fhir_base_url(api_base_url)}/{resource.resource_type}/{resource.id}"
 
     if resource.resource_type == Bundle.__name__ and resource.type in (
@@ -224,6 +302,12 @@ def post_fhir_resource(
         # these bundle types are posted to the root of the FHIR server
         logging.info("Posting bundle to the root FHIR endpoint")
         url = f"{fhir_base_url(api_base_url)}/"
+        resource = add_provenance_for_bundle(bundle=resource, ods_code=ods_code)
+    else:
+        if "X-Provenance" not in headers:
+            headers["X-Provenance"] = provenance_for(
+                resource=resource, ods_code=ods_code
+            ).json(exclude_none=True)
 
     logging.info("Posting resource to endpoint: %s", url)
     logging.debug(resource.json(exclude_none=True))
@@ -239,7 +323,9 @@ def post_fhir_resource(
         data=resource.json(exclude_none=True),
         timeout=REQUEST_TIMEOUT_SECS,
     )
-    if not response.ok:
+    if response.ok:
+        logging.info("Successfully posted FHIR resource")
+    else:
         logging.error(
             "Failed to post resource to: %s status: %i response: %s",
             url,
@@ -258,6 +344,7 @@ def search_for_fhir_resource(
     api_base_url: str,
     headers: dict[str, str] | None = None,
 ) -> Bundle:
+    """Search for a FHIR resource using the query parameters"""
     url: str = f"{fhir_base_url(api_base_url)}/{resource_type}"
     logging.info("Requesting endpoint: %s", url)
     response: requests.Response = requests.get(
@@ -284,6 +371,7 @@ def search_for_fhir_resource(
 def get_service_request(
     ngis_referral_id: str, api_base_url: str, headers: dict[str, str] | None = None
 ) -> CGPServiceRequest:
+    """Search for a ServiceRequest resource corresponding to an NGIS referral ID"""
     bundle: Bundle = search_for_fhir_resource(
         resource_type=ServiceRequest.get_resource_type(),
         params={"identifier": ngis_referral_id},
@@ -303,6 +391,7 @@ def get_service_request(
 def get_patient(
     ngis_participant_id: str, api_base_url: str, headers: dict[str, str] | None = None
 ):
+    """Search for a Patient resource corresponding to an NGIS participant ID"""
     bundle: Bundle = search_for_fhir_resource(
         resource_type=Patient.get_resource_type(),
         params={"identifier": ngis_participant_id},

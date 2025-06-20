@@ -229,7 +229,7 @@ class CGPClient:
     def upload_file_with_drs(
         self, filename: Path, mime_type: str | None = None, dry_run: bool = False
     ) -> DrsObject:
-        """Upload the give file using the DRS upload protocol"""
+        """Upload a file using the DRS upload protocol"""
         return upload_file_with_drs(
             filename=filename,
             mime_type=mime_type,
@@ -247,7 +247,8 @@ class CGPClient:
         fastq_list_sample_id: str | None = None,
         dry_run: bool = False,
     ) -> None:
-        """Read a DRAGEN format fastq_list.csv and upload the data to the CGP"""
+        """Read a DRAGEN format fastq_list.csv and upload the data to the CGP,
+        associating the sample with the specified NGIS participant and referral IDs"""
         upload_sample_from_fastq_list(
             fastq_list_csv=fastq_list_csv,
             fastq_list_sample_id=fastq_list_sample_id,

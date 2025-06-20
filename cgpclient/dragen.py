@@ -4,7 +4,7 @@ import typing
 from pathlib import Path
 
 from fhir.resources.R4B.attachment import Attachment
-from fhir.resources.R4B.bundle import Bundle, BundleEntry, BundleEntryRequest
+from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
 from fhir.resources.R4B.documentreference import (
@@ -23,18 +23,19 @@ from pydantic import BaseModel, PositiveInt
 from cgpclient.drs import DrsObject
 from cgpclient.drsupload import upload_file_with_drs
 from cgpclient.fhir import (  # type: ignore
-    BundleRequestMethod,
-    BundleType,
     DocumentReferenceDocStatus,
     DocumentReferenceRelationship,
     DocumentReferenceStatus,
+    bundle_for,
     post_fhir_resource,
     reference_for,
 )
 from cgpclient.utils import create_uuid
 
 
-class DragenFastqListEntry(BaseModel):
+class FastqListEntry(BaseModel):
+    """A model for a row from a DRAGEN format FASTQ list CSV"""
+
     RGSM: str
     Read1File: Path
     RGID: str | None = None
@@ -43,13 +44,14 @@ class DragenFastqListEntry(BaseModel):
     Read2File: Path | None = None
 
 
-def read_dragen_fastq_list(
+def read_fastq_list(
     fastq_list_csv: Path, fastq_list_sample_id: str | None = None
-) -> list[DragenFastqListEntry]:
-    entries: list[DragenFastqListEntry] = []
+) -> list[FastqListEntry]:
+    """Read a DRAGEN format FASTQ list CSV file"""
+    entries: list[FastqListEntry] = []
     with open(fastq_list_csv, mode="r", encoding="utf8") as file:
         for row in csv.DictReader(file):
-            entry: DragenFastqListEntry = DragenFastqListEntry.model_validate(row)
+            entry: FastqListEntry = FastqListEntry.model_validate(row)
             if fastq_list_sample_id is None:
                 logging.info("Using first RGSM found in file: %s", entry.RGSM)
                 fastq_list_sample_id = entry.RGSM
@@ -63,12 +65,13 @@ def read_dragen_fastq_list(
 
 
 @typing.no_type_check
-def document_reference_for_drs_object(
+def document_reference_for_drs_fastq(
     drs_object: DrsObject,
     specimen: Specimen,
     ods_code: str,
     pair_num: int | None = None,
 ) -> DocumentReference:
+    """Create a DocumentReference resource for a DRS object pointing to a FASTQ file"""
     document_reference: DocumentReference = DocumentReference(
         id=create_uuid(),
         status=DocumentReferenceStatus.CURRENT,
@@ -118,13 +121,14 @@ def document_reference_for_drs_object(
 
 @typing.no_type_check
 def fastq_list_entry_to_document_references(
-    entry: DragenFastqListEntry,
+    entry: FastqListEntry,
     specimen: Specimen,
     ods_code: str,
     api_base_url: str,
     headers: dict[str, str],
     dry_run: bool = False,
 ) -> list[DocumentReference]:
+    """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
     read1_drs_object: DrsObject = upload_file_with_drs(
         filename=entry.Read1File,
@@ -133,7 +137,7 @@ def fastq_list_entry_to_document_references(
         dry_run=dry_run,
     )
 
-    read1_doc_ref: DocumentReference = document_reference_for_drs_object(
+    read1_doc_ref: DocumentReference = document_reference_for_drs_fastq(
         drs_object=read1_drs_object,
         specimen=specimen,
         ods_code=ods_code,
@@ -151,7 +155,7 @@ def fastq_list_entry_to_document_references(
             dry_run=dry_run,
         )
 
-        read2_doc_ref: DocumentReference = document_reference_for_drs_object(
+        read2_doc_ref: DocumentReference = document_reference_for_drs_fastq(
             drs_object=read2_drs_object,
             specimen=specimen,
             ods_code=ods_code,
@@ -179,8 +183,8 @@ def fastq_list_entry_to_document_references(
 
 
 @typing.no_type_check
-def map_entries_to_fhir(
-    entries: list[DragenFastqListEntry],
+def map_entries_to_fhir_bundle(
+    entries: list[FastqListEntry],
     ngis_participant_id: str,
     ngis_referral_id: str,
     ods_code: str,
@@ -188,6 +192,7 @@ def map_entries_to_fhir(
     headers: dict[str, str] | None = None,
     dry_run: bool = False,
 ) -> Bundle:
+    """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
     patient_reference: Reference = Reference(
         identifier=Identifier(
             system="https://genomicsengland.co.uk/ngis-participant-id",
@@ -237,19 +242,7 @@ def map_entries_to_fhir(
             )
         )
 
-    return Bundle(
-        type=BundleType.TRANSACTION,
-        entry=[
-            BundleEntry(
-                fullUrl=f"urn:uuid:{resource.id}",
-                resource=resource,
-                request=BundleEntryRequest(
-                    method=BundleRequestMethod.POST, url=resource.resource_type
-                ),
-            )
-            for resource in [specimen] + document_references
-        ],
-    )
+    return bundle_for([specimen] + document_references)
 
 
 def upload_sample_from_fastq_list(
@@ -262,11 +255,14 @@ def upload_sample_from_fastq_list(
     fastq_list_sample_id: str | None = None,
     dry_run: bool = False,
 ) -> None:
-    entries: list[DragenFastqListEntry] = read_dragen_fastq_list(
+    """Convert a FASTQ list CVS into DRS objects and FHIR resources, and upload
+    the FASTQs and the DRS and FHIR resources to the relevant services
+    """
+    entries: list[FastqListEntry] = read_fastq_list(
         fastq_list_csv=fastq_list_csv, fastq_list_sample_id=fastq_list_sample_id
     )
 
-    fhir_resource_bundle: Bundle = map_entries_to_fhir(
+    fhir_bundle: Bundle = map_entries_to_fhir_bundle(
         entries=entries,
         ngis_participant_id=ngis_participant_id,
         ngis_referral_id=ngis_referral_id,
@@ -277,8 +273,9 @@ def upload_sample_from_fastq_list(
     )
 
     post_fhir_resource(
-        resource=fhir_resource_bundle,  # type: ignore
+        resource=fhir_bundle,  # type: ignore
         api_base_url=api_base_url,
+        ods_code=ods_code,
         headers=headers,
         dry_run=dry_run,
     )

@@ -116,11 +116,12 @@ class S3Url(BaseModel):
     key: str
 
 
-def request_upload(
+def _request_upload(
     upload_request: DrsUploadRequest,
     api_base_url: str,
     headers: dict[str, str] | None = None,
 ) -> DrsUploadResponse:
+    """Request upload details from the DRS server"""
     logging.info("Requesting upload")
 
     logging.debug(upload_request.model_dump_json(exclude_defaults=True))
@@ -145,11 +146,12 @@ def request_upload(
 
 
 def parse_s3_url(s3_url: str) -> S3Url:
+    """Parse an S3 URL into an S3Url object"""
     bucket, key = s3_url.replace("s3://", "").split("/", 1)
     return S3Url(bucket=bucket, key=key)
 
 
-def upload_file_to_s3(
+def _upload_file_to_s3(
     filename: Path, upload_method: DrsUploadMethod, dry_run: bool = False
 ) -> None:
     """Upload the provided file to S3 using the details in the supplied upload method"""
@@ -183,10 +185,11 @@ def upload_file_to_s3(
         raise CGPClientException("Error uploading file to S3") from e
 
 
-def create_upload_request(
+def _create_upload_request(
     filename: Path,
     mime_type: str,
 ) -> DrsUploadRequest:
+    """Create a DrsUploadRequest object for the file"""
     return DrsUploadRequest(
         objects=[
             DrsUploadRequestObject(
@@ -199,17 +202,18 @@ def create_upload_request(
     )
 
 
-def get_upload_response_object(
+def _get_upload_response_object(
     filename: Path,
     mime_type: str,
     api_base_url: str,
     headers: dict[str, str] | None = None,
 ) -> DrsUploadResponseObject:
-    upload_request: DrsUploadRequest = create_upload_request(
+    """Request to upload the file to the DRS server"""
+    upload_request: DrsUploadRequest = _create_upload_request(
         filename=filename, mime_type=mime_type
     )
 
-    upload_response: DrsUploadResponse = request_upload(
+    upload_response: DrsUploadResponse = _request_upload(
         upload_request=upload_request, api_base_url=api_base_url, headers=headers
     )
 
@@ -229,7 +233,7 @@ def upload_file_with_drs(
         if mime_type is None:
             raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
 
-    upload_response_object: DrsUploadResponseObject = get_upload_response_object(
+    upload_response_object: DrsUploadResponseObject = _get_upload_response_object(
         filename=filename,
         mime_type=mime_type,
         api_base_url=api_base_url,
@@ -240,7 +244,7 @@ def upload_file_with_drs(
         upload_method_type=DrsUploadMethodType.S3
     )
 
-    upload_file_to_s3(
+    _upload_file_to_s3(
         filename=filename, upload_method=s3_upload_method, dry_run=dry_run
     )
 
