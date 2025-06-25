@@ -187,8 +187,6 @@ def reference_for(
     ),
 ) -> Reference:
     if use_placeholder_id:
-        # NOTE defaulting for this for referential integrity
-        # TODO discuss if we need to support both formats
         reference_value = f"urn:uuid:{resource.id}"
     else:
         reference_value = f"{resource.resource_type}/{resource.id}"

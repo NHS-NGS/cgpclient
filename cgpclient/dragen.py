@@ -241,11 +241,11 @@ def map_entries_to_fhir_bundle(
         logging.info("Creating Specimen resource for germline blood sample")
         specimen.extension = (
             Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
                 valueCodeableConcept=CodeableConcept(
                     coding=[
                         Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
                             code="germline",
                             display="Germline",
                         )
@@ -268,11 +268,11 @@ def map_entries_to_fhir_bundle(
         logging.info("Creating Specimen resource for tumour sample")
         specimen.extension = (
             Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
                 valueCodeableConcept=CodeableConcept(
                     coding=[
                         Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
                             code="solid-tumour",
                             display="Solid Tumour",
                         )
