@@ -13,10 +13,6 @@ nav:
     - uses/code.md
     - uses/fetching_files.md
     - uses/submitting_files.md
-<<<<<<< HEAD
-=======
-
->>>>>>> main
   - Contributing: contributing.md
   - Workshops: workshops.md
 
@@ -54,16 +50,11 @@ theme:
     - content.action.edit
     - content.code.copy
     - navigation.footer
-<<<<<<< HEAD
-    # - navigation.instant
-=======
     - navigation.instant
->>>>>>> main
     - navigation.top
     - navigation.tracking
     - search.share
     - toc.follow
-<<<<<<< HEAD
 extra_css:
   - assets/stylesheets/extra.css
 markdown_extensions:
@@ -73,7 +64,6 @@ markdown_extensions:
   #       - name: mermaid
   #         class: mermaid
   #         format: !!python/name:pymdownx.superfences.fence_code_format
-=======
 
 extra_css:
   - assets/stylesheets/extra.css
@@ -81,7 +71,6 @@ extra_css:
 markdown_extensions:
   - attr_list
   - pymdownx.superfences
->>>>>>> main
   - abbr
   - admonition
   - pymdownx.details
@@ -98,22 +87,17 @@ markdown_extensions:
   - toc:
       permalink: True
   - meta
-  - pymdownx.emoji 
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
       
 plugins:
-<<<<<<< HEAD
   - search:
       lang: en
   # - mermaid2:
   - mkdocstrings:
       default_handler: python
-
-=======
-  - search
   - mkdocstrings:
       default_handler: python
->>>>>>> main
+
 copyright: Copyright &copy; 2022-2025 Genomics England Limited
