@@ -12,7 +12,9 @@ from cgpclient.utils import APIM_BASE_URL
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata"
+            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata. "
+            "The sample is assumed to be a germline sample taken from blood unless a "
+            "tumour ID is supplied."
         )
     )
 
@@ -32,7 +34,8 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         type=str,
         help=(
             "Sample identifer (RGSM) to include in the upload, "
-            "if not supplied this script will use the first RGSM value found"
+            "if not supplied this script will use the first RGSM value found."
+            "The sample is assumed be to germline unless the --tumour_id argument is supplied"
         ),
     )
     parser.add_argument(
@@ -54,6 +57,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "--ods_code",
         type=str,
         help="ODS code for your organisation",
+    )
+    parser.add_argument(
+        "-t",
+        "--tumour_id",
+        type=str,
+        help="Histopathology or SIHMDS identifier for a tumour sample",
     )
     parser.add_argument(
         "-host",
@@ -163,6 +172,7 @@ def main(cmdline_args: list[str]) -> None:
         fastq_list_sample_id=args.fastq_list_sample_id,
         ngis_participant_id=args.ngis_participant_id,
         ngis_referral_id=args.ngis_referral_id,
+        tumour_id=args.tumour_id,
         ods_code=args.ods_code,
         dry_run=args.dry_run,
     )

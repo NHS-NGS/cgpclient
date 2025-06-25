@@ -207,7 +207,7 @@ def post_drs_object(
 ) -> None:
     """Post the DRS object to the DRS server"""
     endpoint: str = f"{drs_base_url(api_base_url)}/objects"
-    logging.info("Posting DRS object: %s to: %s", drs_object.id, endpoint)
+    logging.info("Posting DRS object: %s", drs_object.id)
     logging.debug(drs_object.model_dump_json(exclude_defaults=True))
 
     if dry_run:

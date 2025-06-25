@@ -7,12 +7,14 @@ from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
+from fhir.resources.R4B.composition import Composition, CompositionSection
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
     DocumentReferenceContent,
     DocumentReferenceContext,
     DocumentReferenceRelatesTo,
 )
+from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.identifier import Identifier
 from fhir.resources.R4B.patient import Patient
 from fhir.resources.R4B.reference import Reference
@@ -23,6 +25,7 @@ from pydantic import BaseModel, PositiveInt
 from cgpclient.drs import DrsObject
 from cgpclient.drsupload import upload_file_with_drs
 from cgpclient.fhir import (  # type: ignore
+    CompositionStatus,
     DocumentReferenceDocStatus,
     DocumentReferenceRelationship,
     DocumentReferenceStatus,
@@ -30,7 +33,7 @@ from cgpclient.fhir import (  # type: ignore
     post_fhir_resource,
     reference_for,
 )
-from cgpclient.utils import create_uuid
+from cgpclient.utils import create_uuid, get_current_datetime
 
 
 class FastqListEntry(BaseModel):
@@ -86,7 +89,12 @@ def document_reference_for_drs_fastq(
         ],
         subject=specimen.subject,
         type=CodeableConcept(
-            coding=[Coding(system="http://genomics-file-types.com", code="FASTQ")]
+            coding=[
+                Coding(
+                    system="https://genomicsengland.co.uk/genomics-file-types",
+                    code="FASTQ",
+                )
+            ]
         ),
         content=[
             DocumentReferenceContent(
@@ -109,8 +117,8 @@ def document_reference_for_drs_fastq(
             CodeableConcept(
                 coding=[
                     Coding(
-                        system="http://genomics-file-types.com",
-                        code=f"READ-GROUP-{pair_num}",
+                        system="https://genomicsengland.co.uk/genomic-file-types",
+                        code=f"FASTQ-READ-GROUP-{pair_num}",
                     )
                 ]
             )
@@ -189,6 +197,7 @@ def map_entries_to_fhir_bundle(
     ngis_referral_id: str,
     ods_code: str,
     api_base_url: str,
+    tumour_id: str | None = None,
     headers: dict[str, str] | None = None,
     dry_run: bool = False,
 ) -> Bundle:
@@ -213,7 +222,7 @@ def map_entries_to_fhir_bundle(
         id=create_uuid(),
         identifier=[
             Identifier(
-                system=f"https://{ods_code}.com/lab-sample-id", value=entries[0].RGSM
+                system=f"https://{ods_code}.nhs.uk/lab-sample-id", value=entries[0].RGSM
             )
         ],
         subject=patient_reference,
@@ -227,6 +236,54 @@ def map_entries_to_fhir_bundle(
             )
         ),
     )
+
+    if tumour_id is None:
+        logging.info("Creating Specimen resource for germline blood sample")
+        specimen.extension = (
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",
+                            code="germline",
+                            display="Germline",
+                        )
+                    ]
+                ),
+            ),
+        )
+
+        specimen.type = CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://snomed.info/sct",
+                    code="445295009",
+                    display="Blood specimen with EDTA",
+                )
+            ]
+        )
+
+    else:
+        logging.info("Creating Specimen resource for tumour sample")
+        specimen.extension = (
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",
+                            code="solid-tumour",
+                            display="Solid Tumour",
+                        )
+                    ]
+                ),
+            ),
+        )
+
+        specimen.identifier += [
+            Identifier(system=f"https://{ods_code}.nhs.uk/tumour-id", value=tumour_id)
+        ]
 
     document_references: list[DocumentReference] = []
 
@@ -242,7 +299,35 @@ def map_entries_to_fhir_bundle(
             )
         )
 
-    return bundle_for([specimen] + document_references)
+    composition: Composition = Composition(
+        id=create_uuid(),
+        status=CompositionStatus.FINAL,
+        type=CodeableConcept(
+            coding=[Coding(system="http://loinc.org", code="86206-0")]
+        ),
+        date=get_current_datetime(),
+        author=[
+            Reference(
+                identifier=Identifier(
+                    system="https://fhir.nhs.uk/Id/ods-organization-code",
+                    value=ods_code,
+                ),
+            )
+        ],
+        title="WGS FASTQ sample delivery",
+        section=[
+            CompositionSection(title="sample", entry=[reference_for(specimen)]),
+            CompositionSection(
+                title="fastqs",
+                entry=[
+                    reference_for(document_reference)
+                    for document_reference in document_references
+                ],
+            ),
+        ],
+    )
+
+    return bundle_for([composition, specimen] + document_references)
 
 
 def upload_sample_from_fastq_list(
@@ -251,6 +336,7 @@ def upload_sample_from_fastq_list(
     ngis_referral_id: str,
     ods_code: str,
     api_base_url: str,
+    tumour_id: str | None = None,
     headers: dict[str, str] | None = None,
     fastq_list_sample_id: str | None = None,
     dry_run: bool = False,
@@ -267,6 +353,7 @@ def upload_sample_from_fastq_list(
         ngis_participant_id=ngis_participant_id,
         ngis_referral_id=ngis_referral_id,
         ods_code=ods_code,
+        tumour_id=tumour_id,
         api_base_url=api_base_url,
         headers=headers,
         dry_run=dry_run,

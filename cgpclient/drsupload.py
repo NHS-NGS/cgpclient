@@ -135,7 +135,7 @@ def _request_upload(
     response.raise_for_status()
 
     if response.ok:
-        logging.info("Got response from DRS upload request endpoint")
+        logging.info("Upload request successful")
         drs_response: DrsUploadResponse = DrsUploadResponse.model_validate(
             response.json()
         )
@@ -178,9 +178,9 @@ def _upload_file_to_s3(
     try:
         s3_url: str = upload_method.access_url.url
         parsed_url: S3Url = parse_s3_url(s3_url=s3_url)
-        logging.info("Uploading %s to %s", filename, s3_url)
+        logging.info("Uploading %s", filename)
         s3.upload_file(filename, Bucket=parsed_url.bucket, Key=parsed_url.key)
-        logging.info("Uploaded %s to %s", filename, s3_url)
+        logging.info("Uploaded successfully to %s", s3_url)
     except Exception as e:
         raise CGPClientException("Error uploading file to S3") from e
 

@@ -244,6 +244,7 @@ class CGPClient:
         ngis_participant_id: str,
         ngis_referral_id: str,
         ods_code: str,
+        tumour_id: str | None = None,
         fastq_list_sample_id: str | None = None,
         dry_run: bool = False,
     ) -> None:
@@ -254,6 +255,7 @@ class CGPClient:
             fastq_list_sample_id=fastq_list_sample_id,
             ngis_participant_id=ngis_participant_id,
             ngis_referral_id=ngis_referral_id,
+            tumour_id=tumour_id,
             ods_code=ods_code,
             dry_run=dry_run,
             api_base_url=self.api_base_url,

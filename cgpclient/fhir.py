@@ -2,7 +2,6 @@
 # we ignore type checking here because of incompatibilities with fhir.resources
 
 import logging
-from datetime import datetime, timezone
 from enum import StrEnum
 
 import requests
@@ -20,7 +19,12 @@ from fhir.resources.R4B.relatedperson import RelatedPerson
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
 import cgpclient
-from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, create_uuid
+from cgpclient.utils import (
+    REQUEST_TIMEOUT_SECS,
+    CGPClientException,
+    create_uuid,
+    get_current_datetime,
+)
 
 
 class SpecimenStatus(StrEnum):
@@ -78,6 +82,13 @@ class DocumentReferenceRelationship(StrEnum):
     TRANSFORMS = "transforms"
     REPLACES = "replaces"
     SIGNS = "signs"
+
+
+class CompositionStatus(StrEnum):
+    PRELIMINARY = "preliminary"
+    FINAL = "final"
+    AMENDED = "amended"
+    ENTERED_IN_ERROR = "entered-in-error"
 
 
 # pylint: disable=too-many-ancestors
@@ -171,7 +182,7 @@ def provenance_for(resource: DomainResource, ods_code: str) -> Provenance:
     return Provenance(
         id=create_uuid(),
         target=[reference_for(resource)],
-        recorded=datetime.now(timezone.utc).isoformat(),
+        recorded=get_current_datetime(),
         agent=[
             ProvenanceAgent(
                 who=reference_for(CGPClientDevice),
@@ -272,15 +283,17 @@ def bundle_for(
 
 def add_provenance_for_bundle(bundle: Bundle, ods_code: str) -> Bundle:
     """Add Provenance resources for each of the resources in the Bundle"""
+
+    # add the Device resource
+    bundle.entry += [bundle_entry_for(CGPClientDevice)]
+
     provenance_resources: list[BundleEntry] = [
         bundle_entry_for(resource=provenance_for(entry.resource, ods_code=ods_code))
         for entry in bundle.entry
     ]
 
-    # include the original resources, the Provenance resources, and the Device resource
-    bundle.entry = (
-        bundle.entry + provenance_resources + [bundle_entry_for(CGPClientDevice)]
-    )
+    # include the original resources and the Provenance resources
+    bundle.entry = bundle.entry + provenance_resources
     return bundle
 
 
@@ -305,6 +318,8 @@ def post_fhir_resource(
         url = f"{fhir_base_url(api_base_url)}/"
         if include_provenance:
             resource = add_provenance_for_bundle(bundle=resource, ods_code=ods_code)
+
+        logging.info("Posting bundle including %i entries", len(resource.entry))
     else:
         if include_provenance and "X-Provenance" not in headers:
             headers["X-Provenance"] = provenance_for(
