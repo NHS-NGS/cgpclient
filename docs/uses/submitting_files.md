@@ -27,7 +27,7 @@ You will first need to configure your cgpclient, the following is the basic conf
 debug: true
 output_dir: /tmp/output
 api_host: XXXXXX # will be shared
-override_api_base_url: true
+override_api_base_url: true # needed when testing in non-live environments
 api_key: XXXXXXX # will be shared
 dry_run: true # use to test the upload without uploading
 ods_code: XXXXXXX # your ODS code
@@ -55,16 +55,16 @@ Use the `upload_dragen_fastq_list.py` script with the following command:
 
 ``` python
 
-python cgpclient/scripts/upload_dragen_fastq_list.py -f {path to fastq list csv file from Dragen} -p {NGIS participant ID} -r {NGIS referral ID} -cfg {path to cgpclient config file}
+python cgpclient/scripts/upload_dragen_fastq_list.py
+--fastq_list_sample_id {someid} 
+--fastq_list {path to fastq list csv file from Dragen} 
+--ngis_participant_id {NGIS participant ID} 
+--ngis_referral_id {NGIS referral ID} 
+--config_file {path to cgpclient config file}
 ```
 
-e.g.
 
-``` python
-    python cgpclient/scripts/upload_dragen_fastq_list.py -f ./fastq_list.csv -p p1234 -r r1234 -cfg ./cgpclient_config.yaml
-```
-
-- Replace <someid\> with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload.
+- Replace {someid} with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload. If not supplied this script will use the first RGSM value found
 - Repeat this command for each unique sample (as listed in the RGSM column) that has files to be uploaded.
 
 ???+ info
@@ -91,7 +91,7 @@ Once executed:
 
 ### 5. Upload Results
 
-- Successful uploads will return confirmation messages.
+- Large files may take time to upload, log messages will be shown on the terminal. Successful uploads will return confirmation messages.
 - Errors will be reported with relevant details.
 
 ### 6. Post-Upload Association
@@ -102,32 +102,3 @@ After upload:
 - The NGIS pipeline will proceed once all required data has been verified.
 
 --8<-- "includes/abbreviations.md"
-
-<!-- 
-``` mermaid
- flowchart TD
-    A1[Sequencing Centre: Demultiplex the Sequencing Run]
-    A2[Sequencing Centre: Upload FASTQ Files using cgpclient and fastq_file_list.csv]
-    A2a[cgpclient: Upload Files]
-    A2b[cgpclient: Create FHIR and GA4GH Resources]
-    A3[Sequencing Centre: Confirm all files have been uploaded]
-
-    B1[Genomics England: Reconstruct fastq_file_list.csv from FHIR and DRS]
-    B2[Genomics England: Sync data to NGIS / WEKA]
-    B3[Genomics England: Run Dragen and WGS Pipelines]
-    B3a[Report QC Issues to Sequencing Centre]
-    B3b[Report Results via Interpretation Platform]
-
-
-    A1 --> A2
-    A2 --> A2a
-    A2 --> A2b
-    A2a --> A3
-    A2b --> A3
-    A3 --> B1
-    B1 --> B2
-    B2 --> B3
-    B3 --> B3a
-    B3 --> B3b 
-
-``` -->
