@@ -35,7 +35,8 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help=(
             "Sample identifer (RGSM) to include in the upload, "
             "if not supplied this script will use the first RGSM value found."
-            "The sample is assumed be to germline unless the --tumour_id argument is supplied"
+            "The sample is assumed be to germline unless the --tumour_id "
+            "argument is supplied"
         ),
     )
     parser.add_argument(

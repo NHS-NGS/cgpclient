@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Uploading files
 
 The cgpclient can be used to upload files e.g. FASTQs from NHS Sequencing Centres to the CGP.
@@ -100,5 +101,10 @@ After upload:
 
 - FASTQ files will be linked to the corresponding NGIS participant and referral.
 - The NGIS pipeline will proceed once all required data has been verified.
+=======
+
+# TBC
+
+>>>>>>> main
 
 --8<-- "includes/abbreviations.md"

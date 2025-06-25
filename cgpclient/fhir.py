@@ -178,6 +178,35 @@ CGPClientDevice: Device = Device(
 )
 
 
+def reference_for(
+    resource: DomainResource,
+    include_first_identifier: bool = False,
+    use_placeholder_id: bool = True,
+    special_resource_types: frozenset[str] = frozenset(
+        {"Patient", "Specimen", "ServiceRequest"}
+    ),
+) -> Reference:
+    if use_placeholder_id:
+        # NOTE defaulting for this for referential integrity
+        # TODO discuss if we need to support both formats
+        reference_value = f"urn:uuid:{resource.id}"
+    else:
+        reference_value = f"{resource.resource_type}/{resource.id}"
+    reference: Reference = Reference(reference=reference_value)
+
+    if resource.resource_type in special_resource_types:
+        # we set this argument by default for these special resource types
+        include_first_identifier = True
+
+    if (
+        include_first_identifier
+        and resource.identifier is not None
+        and len(resource.identifier) > 0
+    ):
+        reference.identifier = resource.identifier[0]
+    return reference
+
+
 def provenance_for(resource: DomainResource, ods_code: str) -> Provenance:
     return Provenance(
         id=create_uuid(),
@@ -203,36 +232,7 @@ def fhir_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/FHIR/R4"
 
 
-def reference_for(
-    resource: DomainResource,
-    include_first_identifier: bool = False,
-    use_placeholder_id: bool = True,
-    special_resource_types: frozenset[str] = frozenset(
-        {"Patient", "Specimen", "ServiceRequest"}
-    ),
-) -> Reference:
-    """Create a FHIR Reference resource referring to the resource"""
-    if use_placeholder_id:
-        reference_value = f"urn:uuid:{resource.id}"
-    else:
-        reference_value = f"{resource.resource_type}/{resource.id}"
-
-    reference: Reference = Reference(reference=reference_value)
-
-    if resource.resource_type in special_resource_types:
-        # we set this argument by default for these special resource types
-        include_first_identifier = True
-
-    if (
-        include_first_identifier
-        and resource.identifier is not None
-        and len(resource.identifier) > 0
-    ):
-        reference.identifier = resource.identifier[0]
-    return reference
-
-
-def get_fhir_resource(
+def get_resource(
     resource_type: str,
     resource_id: str,
     api_base_url: str,
