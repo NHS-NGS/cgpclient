@@ -55,18 +55,15 @@ theme:
     - navigation.tracking
     - search.share
     - toc.follow
-
-# extra_css:
-#   - assets/stylesheets/extra.css
-# extra_javascript:
-#     - https://cdn.jsdelivr.net/npm/mermaid@10.1.0/dist/mermaid.min.js
+extra_css:
+  - assets/stylesheets/extra.css
 markdown_extensions:
   - attr_list
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
+  # - pymdownx.superfences:
+  #     custom_fences:
+  #       - name: mermaid
+  #         class: mermaid
+  #         format: !!python/name:pymdownx.superfences.fence_code_format
   - abbr
   - admonition
   - pymdownx.details
@@ -91,7 +88,7 @@ markdown_extensions:
 plugins:
   - search:
       lang: en
-  - mermaid2:
+  # - mermaid2:
   - mkdocstrings:
       default_handler: python
 
