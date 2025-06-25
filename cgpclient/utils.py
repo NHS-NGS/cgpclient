@@ -1,8 +1,11 @@
 import hashlib
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 REQUEST_TIMEOUT_SECS = 30
+
+APIM_BASE_URL = "api.service.nhs.uk"
 
 
 class CGPClientException(Exception):
@@ -19,4 +22,10 @@ def md5sum(filename: Path) -> str:
 
 
 def create_uuid() -> str:
+    """Create a UUID string"""
     return str(uuid.uuid4())
+
+
+def get_current_datetime() -> str:
+    """Return the current datetime in ISO format in the UTC timezone"""
+    return datetime.now(timezone.utc).isoformat()

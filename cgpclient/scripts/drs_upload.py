@@ -28,19 +28,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "--mime_type",
         type=str,
         help="MIME type of the file",
-        required=True,
-    )
-    parser.add_argument(
-        "-r",
-        "--ngis_referral_id",
-        type=str,
-        help="NGIS referral ID, e.g r30000000001",
-    )
-    parser.add_argument(
-        "-p",
-        "--ngis_participant_id",
-        type=str,
-        help="NGIS participant ID, e.g p12345678303",
     )
     parser.add_argument(
         "-host",
@@ -109,6 +96,13 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
+    parser.add_argument(
+        "-d",
+        "--dry_run",
+        type=bool,
+        help="Just create the DRS and FHIR resources, don't actually upload anything",
+        default=False,
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -139,7 +133,9 @@ def main(cmdline_args: list[str]) -> None:
         override_api_base_url=args.override_api_base_url,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    client.upload_file_with_drs(
+        filename=args.file, mime_type=args.mime_type, dry_run=args.dry_run
+    )
 
 
 if __name__ == "__main__":

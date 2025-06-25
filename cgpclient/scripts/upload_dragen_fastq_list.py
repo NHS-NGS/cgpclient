@@ -12,35 +12,58 @@ from cgpclient.utils import APIM_BASE_URL
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Upload a genomic file associated with an NGIS referral "
-            "and participant ID using the GDAM API in the NHS APIM"
+            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata. "
+            "The sample is assumed to be a germline sample taken from blood unless a "
+            "tumour ID is supplied."
         )
     )
+
     parser.add_argument(
         "-f",
-        "--file",
+        "--fastq_list",
         type=Path,
-        help="File to upload",
+        help=(
+            "Dragen FASTQ list CSV file, following the format described here: "
+            "https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm)"  # noqa: E501
+        ),
         required=True,
     )
     parser.add_argument(
-        "-t",
-        "--mime_type",
+        "-s",
+        "--fastq_list_sample_id",
         type=str,
-        help="MIME type of the file",
+        help=(
+            "Sample identifer (RGSM) to include in the upload, "
+            "if not supplied this script will use the first RGSM value found."
+            "The sample is assumed be to germline unless the --tumour_id "
+            "argument is supplied"
+        ),
+    )
+    parser.add_argument(
+        "-p",
+        "--ngis_participant_id",
+        type=str,
+        help="NGIS participant identifier for the sample",
         required=True,
     )
     parser.add_argument(
         "-r",
         "--ngis_referral_id",
         type=str,
-        help="NGIS referral ID, e.g r30000000001",
+        help="NGIS referral identifier for the sample",
+        required=True,
     )
     parser.add_argument(
-        "-p",
-        "--ngis_participant_id",
+        "-o",
+        "--ods_code",
         type=str,
-        help="NGIS participant ID, e.g p12345678303",
+        help="ODS code for your organisation",
+    )
+    parser.add_argument(
+        "-t",
+        "--tumour_id",
+        type=str,
+        help="Histopathology or SIHMDS identifier for a tumour sample",
     )
     parser.add_argument(
         "-host",
@@ -109,6 +132,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
+    parser.add_argument(
+        "-d",
+        "--dry_run",
+        action="store_true",
+        help="Just create the DRS and FHIR resources, don't actually upload anything",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -139,7 +168,15 @@ def main(cmdline_args: list[str]) -> None:
         override_api_base_url=args.override_api_base_url,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    client.upload_dragen_fastq_list(
+        fastq_list_csv=args.fastq_list,
+        fastq_list_sample_id=args.fastq_list_sample_id,
+        ngis_participant_id=args.ngis_participant_id,
+        ngis_referral_id=args.ngis_referral_id,
+        tumour_id=args.tumour_id,
+        ods_code=args.ods_code,
+        dry_run=args.dry_run,
+    )
 
 
 if __name__ == "__main__":

@@ -87,10 +87,14 @@ class Error(BaseModel):
 
 
 def drs_base_url(api_base_url: str) -> str:
+    """Return the base HTTPS URL for the DRS server"""
     return f"https://{api_base_url}/ga4gh/drs/v1.4"
 
 
-def get_object_from_url(url: str, headers: dict[str, str] | None = None) -> DrsObject:
+def get_drs_object_from_url(
+    url: str, headers: dict[str, str] | None = None
+) -> DrsObject:
+    """Fetch a DRS server from the specified URL"""
     logging.info("Requesting endpoint: %s", url)
     response: requests.Response = requests.get(
         url=url,
@@ -112,16 +116,18 @@ def get_object_from_url(url: str, headers: dict[str, str] | None = None) -> DrsO
     )
 
 
-def get_object(
+def get_drs_object(
     object_id: str, api_base_url: str, headers: dict[str, str] | None = None
 ) -> DrsObject:
-    return get_object_from_url(
+    """Fetch the DRS object from the server"""
+    return get_drs_object_from_url(
         url=f"{drs_base_url(api_base_url)}/objects/{object_id}",
         headers=headers,
     )
 
 
 def map_drs_to_https_url(drs_url: str) -> str:
+    """Map a DRS URL to the corresponding HTTPS URL"""
     if not drs_url.startswith("drs://"):
         raise CGPClientException(f"Invalid DRS URL: {drs_url}")
     try:
@@ -138,6 +144,7 @@ def map_drs_to_https_url(drs_url: str) -> str:
 
 
 def map_https_to_drs_url(https_url: str) -> str:
+    """Map an HTTPS URL to a DRS URL"""
     if not https_url.startswith("https://"):
         raise CGPClientException(f"Invalid HTTPS URL: {https_url}")
     try:
@@ -152,7 +159,7 @@ def map_https_to_drs_url(https_url: str) -> str:
         raise CGPClientException(f"Unable to parse HTTPS DRS URL: {https_url}") from e
 
 
-def _rewrite_api_base_url(url: str, host: str) -> str:
+def _override_api_base_url(url: str, host: str) -> str:
     _, path = url.split("/ga4gh/")
     return f"https://{host}/ga4gh/{path}"
 
@@ -163,14 +170,17 @@ def get_access_url(
     headers: dict[str, str] | None = None,
     api_base_url_override: str | None = None,
 ) -> str | None:
+    """Fetch an access URL of the specified type for the corresponding DRS object"""
     logging.info("Fetching %s access_url for DRS URL: %s", access_type, object_url)
     if object_url.startswith("drs:"):
         object_url = map_drs_to_https_url(object_url)
 
     if object_url.startswith("https:"):
         if api_base_url_override is not None:
-            object_url = _rewrite_api_base_url(object_url, api_base_url_override)
-        response: DrsObject = get_object_from_url(url=object_url, headers=headers)
+            object_url = _override_api_base_url(
+                url=object_url, host=api_base_url_override
+            )
+        response: DrsObject = get_drs_object_from_url(url=object_url, headers=headers)
         for access_method in response.access_methods:
             if access_method.access_url is not None:
                 if access_type is None or access_method.type == access_type:
@@ -180,8 +190,8 @@ def get_access_url(
                         access_method.access_url.url,
                     )
                     if api_base_url_override:
-                        return _rewrite_api_base_url(
-                            access_method.access_url.url, api_base_url_override
+                        return _override_api_base_url(
+                            url=access_method.access_url.url, host=api_base_url_override
                         )
                     return access_method.access_url.url
         # we didn't find an access_method
@@ -189,18 +199,30 @@ def get_access_url(
     raise CGPClientException(f"Unsupported protocol for access URL: {object_url}")
 
 
-def put_object(
-    drs_object: DrsObject, api_base_url: str, headers: dict[str, str] | None = None
+def post_drs_object(
+    drs_object: DrsObject,
+    api_base_url: str,
+    headers: dict[str, str] | None = None,
+    dry_run: bool = False,
 ) -> None:
-    endpoint: str = drs_uri(drs_object.id, api_base_url)
-    logging.info("Posting DRS object: %s to: %s", drs_object.id, endpoint)
+    """Post the DRS object to the DRS server"""
+    endpoint: str = f"{drs_base_url(api_base_url)}/objects"
+    logging.info("Posting DRS object: %s", drs_object.id)
+    logging.debug(drs_object.model_dump_json(exclude_defaults=True))
+
+    if dry_run:
+        logging.info("Dry run, so skipping posting DRS object")
+        return
+
     response: requests.Response = requests.post(
         url=endpoint,
         headers=headers,
         timeout=REQUEST_TIMEOUT_SECS,
-        json=drs_object.model_dump_json(),
+        json=drs_object.model_dump(),
     )
-    if not response.ok:
+    if response.ok:
+        logging.info("Successfully posted DRS objects")
+    else:
         raise CGPClientException(
             (
                 f"Error posting DRS object, status code: "
@@ -210,6 +232,7 @@ def put_object(
 
 
 def drs_uri(object_id: str, api_base_url: str) -> str:
+    """Return the DRS URL for the given DRS object ID"""
     return f"{drs_base_url(api_base_url)}/objects/{object_id}"
 
 
@@ -218,8 +241,12 @@ def access_method_for_s3(
     s3_key: str,
     s3_region: str,
 ) -> AccessMethod:
+    """Construct an AccessMethod for an S3 object"""
     return AccessMethod(
-        type="s3", access_id=f"s3://{s3_bucket}/{s3_key}", region=s3_region
+        type=AccessMethodType.S3,
+        access_url=AccessURL(url=f"s3://{s3_bucket}/{s3_key}"),
+        access_id="s3",
+        region=s3_region,
     )
 
 
@@ -233,6 +260,7 @@ def object_for_s3(
     md5_checksum: str = "",
     drs_id: str | None = None,
 ) -> DrsObject:
+    """Create a DRS object for an S3 object"""
     if drs_id is None:
         drs_id = create_uuid()
 
