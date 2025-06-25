@@ -14,7 +14,10 @@ dependencies = [
     "pyjwt>=2.10.0",
     "cryptography>=43.0.3",
     "pyyaml>=6.0.2",
-    "fhir.resources==7.1.0"
+    "fhir.resources==7.1.0",
+    "mkdocs (>=1.6.1,<2.0.0)",
+    "mkdocs-material (>=9.6.9,<10.0.0)",
+    "mkdocstrings[python]>=0.18"
 ]
 
 [build-system]
