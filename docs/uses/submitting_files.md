@@ -1,19 +1,9 @@
 # Uploading files
 
+The cgpclient can be used to upload files e.g. FASTQs from NHS Sequencing Centres to the CGP.
 
-``` mermaid
-graph LR
-A[Start] --> B{Error?};
-B -->|Yes| C[Hmm...];
-C --> D[Debug];
-D --> B;
-B ---->|No| E[Yay!];
-```
-
-Using the cgpclient FASTQ files from NHS Sequencing Centres can be uploaded to the CGP.
-
-We have included in the scripts (to do add link) directory an example of how this can be done for FASTQ files that are either `.gz` or `.ora` compressed
-and generated after demultiplexing with the Dragen software.
+We have included in the [scripts](https://github.com/NHS-NGS/cgpclient/tree/main/cgpclient/scripts) directory an example of how this can be done for FASTQ files generated after 
+demultiplexing with the Dragen software.
 
 !!! warning
 
@@ -28,58 +18,51 @@ and generated after demultiplexing with the Dragen software.
 
 Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_fastq_list.py` script.
 
-???+ info
+### 1. Configure CGP Client 
 
-    Before uploading files you will need to have first set up your cgpclient, see [configuration](../set_up/configuration.md)
-    for instructions
+You will first need to configure your cgpclient, the following is the basic config required:
+ 
+``` yaml
 
+debug: true
+output_dir: /tmp/output
+api_host: XXXXXX # will be shared
+override_api_base_url: true
+api_key: XXXXXXX # will be shared
+dry_run: true # use to test the upload without uploading
+ods_code: XXXXXXX # your ODS code
 
-
-
-
-
-``` mermaid
- flowchart TD
-    A1[Sequencing Centre: Demultiplex the Sequencing Run]
-    A2[Sequencing Centre: Upload FASTQ Files using cgpclient and fastq_file_list.csv]
-    A2a[cgpclient: Upload Files]
-    A2b[cgpclient: Create FHIR and GA4GH Resources]
-    A3[Sequencing Centre: Confirm all files have been uploaded]
-
-    B1[Genomics England: Reconstruct fastq_file_list.csv from FHIR and DRS]
-    B2[Genomics England: Sync data to NGIS / WEKA]
-    B3[Genomics England: Run Dragen and WGS Pipelines]
-    B3a[Report QC Issues to Sequencing Centre]
-    B3b[Report Results via Interpretation Platform]
-
-    A1 --> A2
-    A2 --> A2a
-    A2 --> A2b
-    A2a --> A3
-    A2b --> A3
-    A3 --> B1
-    B1 --> B2
-    B2 --> B3
-    B3 --> B3a
-    B3 --> B3b 
 ```
 
-### 1. Demultiplex the Sequencing Run
 
-Use the **Dragen** software (version: >=`4.*.*`) to demultiplex the entire sequencing run. This process will:
+???+ info
+
+    For full details on configuration options of the cgpclient, see [configuration](../set_up/configuration.md)
+
+### 2. Demultiplex the Sequencing Run
+
+Use the **Dragen** software (version: >=`4.*.*`) to demultiplex the entire sequencing run. This will:
 
 - Generate the FASTQ files.
-- Create a file named `fastq_list.csv` by default.
+- Create a file named `fastq_list.csv`.
 
 Refer to the offical [Dragen documentation](https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm) on the "FASTQ CSV File Format" for 
 details on the `fastq_list.csv` file.
 
-### 2. Upload FASTQ Files
+### 3. Upload FASTQ Files
 
-Use the `upload_dragen_fastq_list.py` script (part of the cgpclient library) with the following command:
+Use the `upload_dragen_fastq_list.py` script with the following command:
 
-    python cgpclient/scripts/upload_dragen_fastq_list.py -f test_fastq_list.csv -p p1234 -r r1234 -cfg cgpclient_config.yaml
+``` python
 
+python cgpclient/scripts/upload_dragen_fastq_list.py -f {path to fastq list csv file from Dragen} -p {NGIS participant ID} -r {NGIS referral ID} -cfg {path to cgpclient config file}
+```
+
+e.g.
+
+``` python
+    python cgpclient/scripts/upload_dragen_fastq_list.py -f ./fastq_list.csv -p p1234 -r r1234 -cfg ./cgpclient_config.yaml
+```
 
 - Replace <someid\> with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload.
 - Repeat this command for each unique sample (as listed in the RGSM column) that has files to be uploaded.
@@ -89,7 +72,7 @@ Use the `upload_dragen_fastq_list.py` script (part of the cgpclient library) wit
     The script will go through each row in the `fastq_list.csv` file and upload only the files for the "<someid\>" and ignore all the others.
 
     
-### 3. Upload Process and Resource Creation
+### 4. Upload Process and Resource Creation
 
 Once executed:
 
@@ -106,12 +89,12 @@ Once executed:
 
     See the [Dragen documentation](https://support.illumina.com/sequencing/sequencing_software/dragen-bio-it-platform/product_files.html) for more information 
 
-### 4. Upload Results
+### 5. Upload Results
 
 - Successful uploads will return confirmation messages.
 - Errors will be reported with relevant details.
 
-### 5. Post-Upload Association
+### 6. Post-Upload Association
 
 After upload:
 
@@ -119,3 +102,32 @@ After upload:
 - The NGIS pipeline will proceed once all required data has been verified.
 
 --8<-- "includes/abbreviations.md"
+
+<!-- 
+``` mermaid
+ flowchart TD
+    A1[Sequencing Centre: Demultiplex the Sequencing Run]
+    A2[Sequencing Centre: Upload FASTQ Files using cgpclient and fastq_file_list.csv]
+    A2a[cgpclient: Upload Files]
+    A2b[cgpclient: Create FHIR and GA4GH Resources]
+    A3[Sequencing Centre: Confirm all files have been uploaded]
+
+    B1[Genomics England: Reconstruct fastq_file_list.csv from FHIR and DRS]
+    B2[Genomics England: Sync data to NGIS / WEKA]
+    B3[Genomics England: Run Dragen and WGS Pipelines]
+    B3a[Report QC Issues to Sequencing Centre]
+    B3b[Report Results via Interpretation Platform]
+
+
+    A1 --> A2
+    A2 --> A2a
+    A2 --> A2b
+    A2a --> A3
+    A2b --> A3
+    A3 --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B3a
+    B3 --> B3b 
+
+``` -->
