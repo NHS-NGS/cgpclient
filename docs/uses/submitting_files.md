@@ -1,8 +1,18 @@
 # Uploading files
 
+
+``` mermaid
+graph LR
+A[Start] --> B{Error?};
+B -->|Yes| C[Hmm...];
+C --> D[Debug];
+D --> B;
+B ---->|No| E[Yay!];
+```
+
 Using the cgpclient FASTQ files from NHS Sequencing Centres can be uploaded to the CGP.
 
-We have included in the [scripts](../../cgpclient/scripts/) directory an example of how this can be done for FASTQ files that are either `.gz` or `.ora` compressed
+We have included in the scripts (to do add link) directory an example of how this can be done for FASTQ files that are either `.gz` or `.ora` compressed
 and generated after demultiplexing with the Dragen software.
 
 !!! warning
@@ -16,7 +26,43 @@ and generated after demultiplexing with the Dragen software.
 
 ## Example data flow
 
-Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen.py` script
+Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_fastq_list.py` script.
+
+???+ info
+
+    Before uploading files you will need to have first set up your cgpclient, see [configuration](../set_up/configuration.md)
+    for instructions
+
+
+
+
+
+
+``` mermaid
+ flowchart TD
+    A1[Sequencing Centre: Demultiplex the Sequencing Run]
+    A2[Sequencing Centre: Upload FASTQ Files using cgpclient and fastq_file_list.csv]
+    A2a[cgpclient: Upload Files]
+    A2b[cgpclient: Create FHIR and GA4GH Resources]
+    A3[Sequencing Centre: Confirm all files have been uploaded]
+
+    B1[Genomics England: Reconstruct fastq_file_list.csv from FHIR and DRS]
+    B2[Genomics England: Sync data to NGIS / WEKA]
+    B3[Genomics England: Run Dragen and WGS Pipelines]
+    B3a[Report QC Issues to Sequencing Centre]
+    B3b[Report Results via Interpretation Platform]
+
+    A1 --> A2
+    A2 --> A2a
+    A2 --> A2b
+    A2a --> A3
+    A2b --> A3
+    A3 --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> B3a
+    B3 --> B3b 
+```
 
 ### 1. Demultiplex the Sequencing Run
 
@@ -30,13 +76,10 @@ details on the `fastq_list.csv` file.
 
 ### 2. Upload FASTQ Files
 
-Use the `upload_dragen.py` script (part of the cgpclient library) with the following command:
+Use the `upload_dragen_fastq_list.py` script (part of the cgpclient library) with the following command:
 
-    ```python
+    python cgpclient/scripts/upload_dragen_fastq_list.py -f test_fastq_list.csv -p p1234 -r r1234 -cfg cgpclient_config.yaml
 
-    upload_dragen.py --dragen-version v4.3.13 --fastq_list fastq_list.csv --fastq_list_sample_id <someid> --ngis_participant_id p1234
-
-    ```
 
 - Replace <someid\> with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload.
 - Repeat this command for each unique sample (as listed in the RGSM column) that has files to be uploaded.
