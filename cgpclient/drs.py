@@ -1,6 +1,12 @@
+from __future__ import annotations
+
 import logging
-from enum import StrEnum
 from typing import List
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from backports.strenum import StrEnum
 
 import requests  # type: ignore
 from pydantic import BaseModel, Field, model_validator

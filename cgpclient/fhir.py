@@ -1,8 +1,13 @@
 # type: ignore
 # we ignore type checking here because of incompatibilities with fhir.resources
+from __future__ import annotations
 
 import logging
-from enum import StrEnum
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from backports.strenum import StrEnum
 
 import requests
 from fhir.resources.R4B import construct_fhir_element

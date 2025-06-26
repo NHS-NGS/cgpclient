@@ -1,7 +1,13 @@
+from __future__ import annotations
+
 import logging
 import mimetypes
-from enum import StrEnum
 from pathlib import Path
+
+try:
+    from enum import StrEnum
+except ImportError:
+    from backports.strenum import StrEnum
 
 import boto3  # type: ignore
 import requests  # type: ignore
@@ -229,7 +235,7 @@ def upload_file_with_drs(
 ) -> DrsObject:
     """Upload the file following the DRS upload protocol"""
     if mime_type is None:
-        (mime_type, _) = mimetypes.guess_file_type(filename)
+        (mime_type, _) = mimetypes.guess_type(filename)
         if mime_type is None:
             raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
 
