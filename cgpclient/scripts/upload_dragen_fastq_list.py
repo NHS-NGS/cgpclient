@@ -40,6 +40,13 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "-r",
+        "--ngis_referral_id",
+        type=str,
+        help="NGIS referral identifier for the test order",
+        required=True,
+    )
+    parser.add_argument(
         "-p",
         "--ngis_participant_id",
         type=str,
@@ -47,23 +54,29 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument(
-        "-r",
-        "--ngis_referral_id",
+        "-i",
+        "--run_id",
         type=str,
-        help="NGIS referral identifier for the sample",
+        help="Unique identifier for the sequencing run that generated the FASTQs",
         required=True,
     )
     parser.add_argument(
-        "-o",
-        "--ods_code",
-        type=str,
-        help="ODS code for your organisation",
+        "-rif",
+        "--run_info_file",
+        type=Path,
+        help="Path to the Illumina RunInfo.xml file with details of the sequencing run",
     )
     parser.add_argument(
         "-t",
         "--tumour_id",
         type=str,
         help="Histopathology or SIHMDS identifier for a tumour sample",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
     )
     parser.add_argument(
         "-host",
@@ -173,6 +186,8 @@ def main(cmdline_args: list[str]) -> None:
         fastq_list_sample_id=args.fastq_list_sample_id,
         ngis_participant_id=args.ngis_participant_id,
         ngis_referral_id=args.ngis_referral_id,
+        run_id=args.run_id,
+        run_info_file=args.run_info_file,
         tumour_id=args.tumour_id,
         ods_code=args.ods_code,
         dry_run=args.dry_run,

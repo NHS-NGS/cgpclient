@@ -18,10 +18,12 @@ from fhir.resources.R4B.documentreference import (
 )
 from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.identifier import Identifier
+from fhir.resources.R4B.organization import Organization
 from fhir.resources.R4B.patient import Patient
+from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.servicerequest import ServiceRequest
-from fhir.resources.R4B.specimen import Specimen, SpecimenCollection
+from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
 from cgpclient.drs import DrsObject
@@ -31,6 +33,7 @@ from cgpclient.fhir import (  # type: ignore
     DocumentReferenceDocStatus,
     DocumentReferenceRelationship,
     DocumentReferenceStatus,
+    ProcedureStatus,
     bundle_for,
     post_fhir_resource,
     reference_for,
@@ -49,6 +52,10 @@ class FastqListEntry(BaseModel):
     Read2File: Path | None = None
 
 
+def resolve_path(fastq_list_csv: Path, fastq: Path):
+    return (fastq_list_csv.parent / fastq).resolve()
+
+
 def read_fastq_list(
     fastq_list_csv: Path, fastq_list_sample_id: str | None = None
 ) -> list[FastqListEntry]:
@@ -61,43 +68,45 @@ def read_fastq_list(
                 logging.info("Using first RGSM found in file: %s", entry.RGSM)
                 fastq_list_sample_id = entry.RGSM
             if entry.RGSM == fastq_list_sample_id:
+                # resolve the FASTQ paths relative to the directory
+                # containing the FASTQ list CSV (if necessary)
+                entry.Read1File = resolve_path(
+                    fastq_list_csv=fastq_list_csv, fastq=entry.Read1File
+                )
+                if entry.Read2File is not None:
+                    entry.Read2File = resolve_path(
+                        fastq_list_csv=fastq_list_csv, fastq=entry.Read2File
+                    )
+
+                # include this entry
                 entries.append(entry)
             else:
-                logging.info("Ignoring RGSM: %s", entry.RGSM)
+                logging.debug("Ignoring RGSM: %s", entry.RGSM)
 
     logging.info("Read %i entries from FASTQ list file", len(entries))
     return entries
 
 
 @typing.no_type_check
-def document_reference_for_drs_fastq(
+def document_reference_for_drs_object(
     drs_object: DrsObject,
     specimen: Specimen,
-    ods_code: str,
-    pair_num: int | None = None,
+    procedure: Procedure,
+    lab_reference: Reference,
 ) -> DocumentReference:
-    """Create a DocumentReference resource for a DRS object pointing to a FASTQ file"""
+    """Create a DocumentReference resource for a DRS object"""
     document_reference: DocumentReference = DocumentReference(
         id=create_uuid(),
-        status=DocumentReferenceStatus.CURRENT,
-        docStatus=DocumentReferenceDocStatus.FINAL,
-        author=[
-            Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                )
+        identifier=[
+            Identifier(
+                system=f"https://{lab_reference.identifier.value}.nhs.uk/filename",
+                value=drs_object.name,
             )
         ],
+        status=DocumentReferenceStatus.CURRENT,
+        docStatus=DocumentReferenceDocStatus.FINAL,
+        author=[lab_reference],
         subject=specimen.subject,
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="https://genomicsengland.co.uk/genomics-file-types",
-                    code="FASTQ",
-                )
-            ]
-        ),
         content=[
             DocumentReferenceContent(
                 attachment=Attachment(
@@ -110,21 +119,10 @@ def document_reference_for_drs_fastq(
             ),
         ],
         context=DocumentReferenceContext(
-            related=specimen.request + [reference_for(specimen)]
+            related=specimen.request
+            + [reference_for(specimen), reference_for(procedure)]
         ),
     )
-
-    if pair_num is not None:
-        document_reference.category = [
-            CodeableConcept(
-                coding=[
-                    Coding(
-                        system="https://genomicsengland.co.uk/genomic-file-types",
-                        code=f"FASTQ-READ-GROUP-{pair_num}",
-                    )
-                ]
-            )
-        ]
 
     return document_reference
 
@@ -133,7 +131,8 @@ def document_reference_for_drs_fastq(
 def fastq_list_entry_to_document_references(
     entry: FastqListEntry,
     specimen: Specimen,
-    ods_code: str,
+    procedure: Procedure,
+    lab_reference: Reference,
     api_base_url: str,
     headers: dict[str, str],
     dry_run: bool = False,
@@ -147,11 +146,11 @@ def fastq_list_entry_to_document_references(
         dry_run=dry_run,
     )
 
-    read1_doc_ref: DocumentReference = document_reference_for_drs_fastq(
+    read1_doc_ref: DocumentReference = document_reference_for_drs_object(
         drs_object=read1_drs_object,
         specimen=specimen,
-        ods_code=ods_code,
-        pair_num=1 if entry.Read2File else None,
+        procedure=procedure,
+        lab_reference=lab_reference,
     )
 
     doc_refs: list[DocumentReference] = [read1_doc_ref]
@@ -165,11 +164,11 @@ def fastq_list_entry_to_document_references(
             dry_run=dry_run,
         )
 
-        read2_doc_ref: DocumentReference = document_reference_for_drs_fastq(
+        read2_doc_ref: DocumentReference = document_reference_for_drs_object(
             drs_object=read2_drs_object,
             specimen=specimen,
-            ods_code=ods_code,
-            pair_num=2,
+            procedure=procedure,
+            lab_reference=lab_reference,
         )
 
         # add relationship between the paired FASTQs
@@ -187,6 +186,28 @@ def fastq_list_entry_to_document_references(
             )
         ]
 
+        read1_doc_ref.category = [
+            CodeableConcept(
+                coding=[
+                    Coding(
+                        system="https://genomicsengland.co.uk/genomic-file-types",
+                        code="FASTQ-READ-GROUP-1",
+                    )
+                ]
+            )
+        ]
+
+        read2_doc_ref.category = [
+            CodeableConcept(
+                coding=[
+                    Coding(
+                        system="https://genomicsengland.co.uk/genomic-file-types",
+                        code="FASTQ-READ-GROUP-2",
+                    )
+                ]
+            )
+        ]
+
         doc_refs.append(read2_doc_ref)
 
     return doc_refs
@@ -197,9 +218,11 @@ def map_entries_to_fhir_bundle(
     entries: list[FastqListEntry],
     ngis_participant_id: str,
     ngis_referral_id: str,
+    run_id,
     ods_code: str,
     api_base_url: str,
     tumour_id: str | None = None,
+    run_info_file: Path | None = None,
     headers: dict[str, str] | None = None,
     dry_run: bool = False,
 ) -> Bundle:
@@ -220,6 +243,14 @@ def map_entries_to_fhir_bundle(
         type=ServiceRequest.__name__,
     )
 
+    lab_reference: Reference = Reference(
+        identifier=Identifier(
+            system="https://fhir.nhs.uk/Id/ods-organization-code",
+            value=ods_code,
+        ),
+        type=Organization.__name__,
+    )
+
     specimen: Specimen = Specimen(
         id=create_uuid(),
         identifier=[
@@ -229,14 +260,28 @@ def map_entries_to_fhir_bundle(
         ],
         subject=patient_reference,
         request=[referral_reference],
-        collection=SpecimenCollection(
-            collector=Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                )
+    )
+
+    procedure: Procedure = Procedure(
+        id=create_uuid(),
+        identifier=[
+            Identifier(
+                system=f"https://{ods_code}.nhs.uk/sequencing-run-id", value=run_id
             )
+        ],
+        code=CodeableConcept(
+            coding=[
+                Coding(
+                    code="461571000124105",
+                    system="http://snomed.info/sct",
+                    display="Whole genome sequencing",
+                )
+            ]
         ),
+        subject=patient_reference,
+        performer=[ProcedurePerformer(actor=lab_reference)],
+        basedOn=[referral_reference],
+        status=ProcedureStatus.COMPLETED,
     )
 
     if tumour_id is None:
@@ -294,10 +339,28 @@ def map_entries_to_fhir_bundle(
             fastq_list_entry_to_document_references(
                 entry=entry,
                 specimen=specimen,
-                ods_code=ods_code,
+                procedure=procedure,
+                lab_reference=lab_reference,
                 api_base_url=api_base_url,
                 headers=headers,
                 dry_run=dry_run,
+            )
+        )
+
+    if run_info_file is not None:
+        run_info_drs_object: DrsObject = upload_file_with_drs(
+            filename=run_info_file,
+            api_base_url=api_base_url,
+            headers=headers,
+            dry_run=dry_run,
+        )
+
+        document_references.append(
+            document_reference_for_drs_object(
+                drs_object=run_info_drs_object,
+                specimen=specimen,
+                procedure=procedure,
+                lab_reference=lab_reference,
             )
         )
 
@@ -308,19 +371,13 @@ def map_entries_to_fhir_bundle(
             coding=[Coding(system="http://loinc.org", code="86206-0")]
         ),
         date=get_current_datetime(),
-        author=[
-            Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                ),
-            )
-        ],
-        title="WGS FASTQ sample delivery",
+        author=[lab_reference],
+        title="WGS sample delivery",
         section=[
             CompositionSection(title="sample", entry=[reference_for(specimen)]),
+            CompositionSection(title="run", entry=[reference_for(procedure)]),
             CompositionSection(
-                title="fastqs",
+                title="files",
                 entry=[
                     reference_for(document_reference)
                     for document_reference in document_references
@@ -329,21 +386,23 @@ def map_entries_to_fhir_bundle(
         ],
     )
 
-    return bundle_for([composition, specimen] + document_references)
+    return bundle_for([composition, specimen, procedure] + document_references)
 
 
 def upload_sample_from_fastq_list(
     fastq_list_csv: Path,
     ngis_participant_id: str,
     ngis_referral_id: str,
+    run_id: str,
     ods_code: str,
     api_base_url: str,
     tumour_id: str | None = None,
     headers: dict[str, str] | None = None,
     fastq_list_sample_id: str | None = None,
+    run_info_file: Path | None = None,
     dry_run: bool = False,
 ) -> None:
-    """Convert a FASTQ list CVS into DRS objects and FHIR resources, and upload
+    """Convert a FASTQ list CSV into DRS objects and FHIR resources, and upload
     the FASTQs and the DRS and FHIR resources to the relevant services
     """
     entries: list[FastqListEntry] = read_fastq_list(
@@ -354,6 +413,8 @@ def upload_sample_from_fastq_list(
         entries=entries,
         ngis_participant_id=ngis_participant_id,
         ngis_referral_id=ngis_referral_id,
+        run_id=run_id,
+        run_info_file=run_info_file,
         ods_code=ods_code,
         tumour_id=tumour_id,
         api_base_url=api_base_url,
