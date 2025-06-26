@@ -12,7 +12,7 @@ nav:
   - Uses:
     - uses/code.md
     - uses/fetching_files.md
-    - uses/submitting_files.md
+    - uses/uploading_files.md
   - Contributing: contributing.md
   - Workshops: workshops.md
 
@@ -75,7 +75,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets:
       auto_append:
-        - docs/assets/includes/abbreviations.md
+        - assets/includes/abbreviations.md
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:

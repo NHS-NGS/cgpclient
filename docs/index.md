@@ -15,6 +15,6 @@ This repository provides a Python client designed to streamline interactions wit
     * APIs are subject to potential breaking changes.
     * No Service Level Agreements (SLAs) are offered at this stage.
 
-    We plan to transition to a private **Beta** phase in the second quarter of 2025, where we will begin testing with realistic data, moving beyond the current test data.
+    We plan to transition to a private **Beta** phase in the near future, where we will begin testing with realistic data, moving beyond the current test data.
 
 --8<-- "includes/abbreviations.md"
