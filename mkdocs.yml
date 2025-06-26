@@ -12,7 +12,7 @@ nav:
   - Uses:
     - uses/code.md
     - uses/fetching_files.md
-    - uses/submitting_files.md
+    - uses/uploading_files.md
   - Contributing: contributing.md
   - Workshops: workshops.md
 
@@ -55,15 +55,6 @@ theme:
     - navigation.tracking
     - search.share
     - toc.follow
-extra_css:
-  - assets/stylesheets/extra.css
-markdown_extensions:
-  - attr_list
-  # - pymdownx.superfences:
-  #     custom_fences:
-  #       - name: mermaid
-  #         class: mermaid
-  #         format: !!python/name:pymdownx.superfences.fence_code_format
 
 extra_css:
   - assets/stylesheets/extra.css
@@ -71,6 +62,11 @@ extra_css:
 markdown_extensions:
   - attr_list
   - pymdownx.superfences
+  # - pymdownx.superfences:
+  #     custom_fences:
+  #       - name: mermaid
+  #         class: mermaid
+  #         format: !!python/name:pymdownx.superfences.fence_code_format
   - abbr
   - admonition
   - pymdownx.details
@@ -79,7 +75,7 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets:
       auto_append:
-        - docs/assets/includes/abbreviations.md
+        - assets/includes/abbreviations.md
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.tasklist:
@@ -95,8 +91,6 @@ plugins:
   - search:
       lang: en
   # - mermaid2:
-  - mkdocstrings:
-      default_handler: python
   - mkdocstrings:
       default_handler: python
 
