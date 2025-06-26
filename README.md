@@ -37,28 +37,16 @@ The tests (which are still a work in progress) can be run from this directory wi
 pytest
 ```
 
-## Contributing
-
-See [here](docs/contributing.md)
-
 ## Scripts
 
-The scripts described below can be found in the [cgpclient/scripts](cgpclient/scripts/) directory.
-
-## Configuration options for scripts
-
-See [here](docs/configuration.md)
+The scripts are available in the [cgpclient/scripts](cgpclient/scripts/) directory.
 
 ## Documentation
 
-After installation as described above, to view the [documentation](docs/) you can run:
+Full documentation is available at: [https://nhs-ngs.github.io/cgpclient/](https://nhs-ngs.github.io/cgpclient/)
 
-`mkdocs serve`
+Key sections include:
 
-## NHS API Platform authentication
-
-See [here](docs/authentication.md)
-
-## Fetch details of genomic files for an NGIS referral
-
-See [here](docs/fetching_files.md)
+- [Contributing](https://nhs-ngs.github.io/cgpclient/contributing/)
+- [Configuration options](https://nhs-ngs.github.io/cgpclient/set_up/configuration/)
+- [NHS API Platform authentication](https://nhs-ngs.github.io/cgpclient/set_up/get_started/)
