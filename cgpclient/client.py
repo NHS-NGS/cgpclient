@@ -9,7 +9,7 @@ import jwt
 import requests  # type: ignore
 from pydantic import BaseModel
 
-from cgpclient.dragen import upload_sample_from_fastq_list
+from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_access_url
 from cgpclient.drsupload import upload_file_with_drs
 from cgpclient.fhir import (  # type: ignore
@@ -240,12 +240,12 @@ class CGPClient:
             dry_run=dry_run,
         )
 
-    def upload_dragen_fastq_list(
+    def upload_dragen_run(
         self,
+        run_id: str,
         fastq_list_csv: Path,
         ngis_participant_id: str,
         ngis_referral_id: str,
-        run_id: str,
         ods_code: str,
         tumour_id: str | None = None,
         fastq_list_sample_id: str | None = None,
@@ -254,7 +254,7 @@ class CGPClient:
     ) -> None:
         """Read a DRAGEN format fastq_list.csv and upload the data to the CGP,
         associating the sample with the specified NGIS participant and referral IDs"""
-        upload_sample_from_fastq_list(
+        upload_dragen_run(
             fastq_list_csv=fastq_list_csv,
             fastq_list_sample_id=fastq_list_sample_id,
             ngis_participant_id=ngis_participant_id,

@@ -21,7 +21,10 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "-i",
         "--run_id",
         type=str,
-        help="Unique identifier for the sequencing run that generated the FASTQs",
+        help=(
+            "Unique identifier for the sequencing run that generated the FASTQs, "
+            "for a DRAGEN run this should be the run folder name"
+        ),
         required=True,
     )
     parser.add_argument(
@@ -35,7 +38,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "--fastq_list",
         type=Path,
         help=(
-            "Dragen FASTQ list CSV file, following the format described here: "
+            "DRAGEN FASTQ list CSV file, following the format described here: "
             "https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm)"  # noqa: E501
         ),
         required=True,

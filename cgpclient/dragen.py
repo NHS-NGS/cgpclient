@@ -389,7 +389,7 @@ def map_entries_to_fhir_bundle(
     return bundle_for([composition, specimen, procedure] + document_references)
 
 
-def upload_sample_from_fastq_list(
+def upload_dragen_run(
     fastq_list_csv: Path,
     ngis_participant_id: str,
     ngis_referral_id: str,

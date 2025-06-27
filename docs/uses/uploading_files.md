@@ -19,7 +19,7 @@ We have included an example script in the [scripts](https://github.com/NHS-NGS/c
 
 ## Example data flow
 
-Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_fastq_list.py` script.
+Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_run.py` script.
 
 ### 1. Configure CGP Client 
 
@@ -27,12 +27,11 @@ You will first need to configure your cgpclient. The following is the basic conf
  
 ``` yaml
 
-debug: true
-output_dir: /tmp/output
+verbose: true
 api_host: XXXXXX # will be shared
 override_api_base_url: true # needed when testing in non-live environments
 api_key: XXXXXXX # will be shared
-dry_run: true # use to test the upload without uploading
+dry_run: true # use to test the upload without uploading, you can also use the --dry_run command line argument
 ods_code: XXXXXXX # your ODS code
 
 ```
@@ -52,13 +51,15 @@ Refer to the offical [Dragen documentation](https://support-docs.illumina.com/SW
 
 ### 3. Upload FASTQ Files
 
-Use the `upload_dragen_fastq_list.py` script with the following command:
+Use the `upload_dragen_run.py` script with the following command:
 
 ``` python
 
-python cgpclient/scripts/upload_dragen_fastq_list.py \
+python cgpclient/scripts/upload_dragen_run.py \
   --fastq_list_sample_id {someid} \
   --fastq_list {path to fastq list csv file from Dragen} \
+  --run_id {DRAGEN run ID}
+  --run_info_file {path to DRAGEN RunInfo.xml file} (optional)
   --ngis_participant_id {NGIS participant ID} \
   --ngis_referral_id {NGIS referral ID} \
   --config_file {path to cgpclient config file}
