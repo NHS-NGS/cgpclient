@@ -53,18 +53,18 @@ Refer to the offical [DRAGEN documentation](https://support-docs.illumina.com/SW
 
 ### 3. Upload FASTQ Files
 
-Use the `upload_dragen_run.py` script with the following command:
+Use the `upload_dragen_run` script with the following command:
 
-``` python
+``` bash
 
-python cgpclient/scripts/upload_dragen_run.py \
+cgpclient/scripts/upload_dragen_run \
   --run_id {DRAGEN run ID}
   --run_info_file {path to DRAGEN RunInfo.xml file} (optional)
-  --fastq_list_sample_id {someid} \
+  --sample_id {someid} \
   --fastq_list {path to fastq list csv file from Dragen} \ 
-  --ngis_participant_id {NGIS participant ID} \
-  --ngis_referral_id {NGIS referral ID} \
-  --config_file {path to cgpclient config file} (if you keep your config in ~/.cgpclient/config.yaml this file will be read by default and you don't need to specify here)
+  --participant_id {NGIS participant ID} \
+  --referral_id {NGIS referral ID} \
+  --config_file {path to cgpclient config file} (if you keep your config in ~/.cgpclient/config.yaml this file will be read by default and you don't need to specify it here)
 
 ```
 
