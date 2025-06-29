@@ -234,9 +234,9 @@ def map_entries_to_bundle(
         )
 
     if run_info_file is not None:
-        document_references.append(
+        document_references.extend(
             create_drs_document_references(
-                filename=run_info_file,
+                filenames=[run_info_file],
                 client=client,
             )
         )
