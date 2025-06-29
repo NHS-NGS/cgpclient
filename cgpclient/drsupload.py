@@ -23,6 +23,7 @@ from cgpclient.drs import (
     DrsObject,
     post_drs_object,
 )
+from cgpclient.htsget import htsget_base_url, mime_type_to_htsget_endpoint
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, md5sum
 
 mimetypes.add_type("text/vcf", ext=".vcf")
@@ -31,6 +32,10 @@ mimetypes.add_type("application/bam", ext=".bam")
 mimetypes.add_type("text/fastq", ext=".fastq")
 mimetypes.add_type("text/fasta", ext=".fasta")
 mimetypes.add_type("text/fastq", ext=".ora")
+mimetypes.add_type("application/index", ext=".tbi")
+mimetypes.add_type("application/index", ext=".csi")
+mimetypes.add_type("application/index", ext=".crai")
+mimetypes.add_type("application/index", ext=".bai")
 
 
 class DrsUploadMethodType(StrEnum):  # type: ignore
@@ -86,7 +91,9 @@ class DrsUploadResponseObject(BaseModel):
 
         return matching_upload_methods[0]
 
-    def to_drs_object(self, upload_method: DrsUploadMethod) -> DrsObject:
+    def to_drs_object(
+        self, upload_method: DrsUploadMethod, api_base_url: str
+    ) -> DrsObject:
         access_methods: list[AccessMethod] = []
         if upload_method.type == DrsUploadMethodType.S3:
             access_methods.append(
@@ -100,6 +107,18 @@ class DrsUploadResponseObject(BaseModel):
         else:
             raise CGPClientException(
                 f"Unsupported upload_method type: {upload_method.type}"
+            )
+
+        htsget_endpoint: str | None = mime_type_to_htsget_endpoint(self.mime_type)
+        if htsget_endpoint is not None:
+            endpoint = (
+                f"{htsget_base_url(api_base_url=api_base_url)}/"
+                f"{htsget_endpoint}/{self.id}"
+            )
+            access_methods.append(
+                AccessMethod(
+                    type=AccessMethodType.HTSGET, access_url=AccessURL(url=endpoint)
+                )
             )
 
         return DrsObject(
@@ -122,6 +141,13 @@ class DrsUploadResponse(BaseModel):
 class S3Url(BaseModel):
     bucket: str
     key: str
+
+
+def guess_mime_type(filename: Path) -> str:
+    (mime_type, _) = mimetypes.guess_type(filename)
+    if mime_type is not None:
+        return mime_type
+    raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
 
 
 def _request_upload(
@@ -192,55 +218,46 @@ def _upload_file_to_s3(
         raise CGPClientException("Error uploading file to S3") from e
 
 
-def _create_upload_request(
-    filename: Path,
-    mime_type: str,
-) -> DrsUploadRequest:
-    """Create a DrsUploadRequest object for the file"""
-    return DrsUploadRequest(
-        objects=[
+def _create_upload_request_object(
+    filenames: list[Path],
+) -> list[DrsUploadRequestObject]:
+    objects: list[DrsUploadRequestObject] = []
+    for filename in filenames:
+        objects.append(
             DrsUploadRequestObject(
                 name=filename.name,
                 checksums=[Checksum(type=ChecksumType.MD5, checksum=md5sum(filename))],
                 size=filename.stat().st_size,
-                mime_type=mime_type,
+                mime_type=guess_mime_type(filename),
             )
-        ]
-    )
+        )
+    return objects
+
+
+def _create_upload_request(filenames: list[Path]) -> DrsUploadRequest:
+    """Create a DrsUploadRequest object for the files"""
+    return DrsUploadRequest(objects=_create_upload_request_object(filenames=filenames))
 
 
 def _get_upload_response_object(
-    filename: Path,
-    mime_type: str,
+    filenames: list[Path],
     client: cgpclient.client.CGPClient,  # type: ignore
-) -> DrsUploadResponseObject:
+) -> dict[str, DrsUploadResponseObject]:
     """Request to upload the file to the DRS server"""
-    upload_request: DrsUploadRequest = _create_upload_request(
-        filename=filename, mime_type=mime_type
-    )
+    upload_request: DrsUploadRequest = _create_upload_request(filenames=filenames)
 
     upload_response: DrsUploadResponse = _request_upload(
         upload_request=upload_request, client=client
     )
 
-    return upload_response.objects[filename.name]
+    return upload_response.objects
 
 
-def upload_file_with_drs(
+def _upload_file_with_upload_response_object(
     filename: Path,
+    upload_response_object: DrsUploadResponseObject,
     client: cgpclient.client.CGPClient,  # type: ignore
-    mime_type: str | None = None,
 ) -> DrsObject:
-    """Upload the file following the DRS upload protocol"""
-    if mime_type is None:
-        (mime_type, _) = mimetypes.guess_type(filename)
-        if mime_type is None:
-            raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
-
-    upload_response_object: DrsUploadResponseObject = _get_upload_response_object(
-        filename=filename, mime_type=mime_type, client=client
-    )
-
     s3_upload_method: DrsUploadMethod = upload_response_object.get_upload_method(
         upload_method_type=DrsUploadMethodType.S3  # type: ignore
     )
@@ -250,9 +267,36 @@ def upload_file_with_drs(
     )
 
     drs_object: DrsObject = upload_response_object.to_drs_object(
-        upload_method=s3_upload_method
+        upload_method=s3_upload_method, api_base_url=client.api_base_url
     )
 
     post_drs_object(drs_object, client=client)
 
     return drs_object
+
+
+def upload_files_with_drs(
+    filenames: list[Path],
+    client: cgpclient.client.CGPClient,
+) -> list[DrsObject]:
+    """Upload the file following the DRS upload protocol"""
+
+    upload_response_objects: dict[str, DrsUploadResponseObject] = (
+        _get_upload_response_object(
+            filenames=filenames,
+            client=client,
+        )
+    )
+
+    drs_objects: list[DrsObject] = []
+
+    for filename in filenames:
+        drs_objects.append(
+            _upload_file_with_upload_response_object(
+                filename=filename,
+                upload_response_object=upload_response_objects[str(filename.name)],
+                client=client,
+            )
+        )
+
+    return drs_objects

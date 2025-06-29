@@ -24,12 +24,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument(
-        "-t",
-        "--mime_type",
-        type=str,
-        help="MIME type of the file",
-    )
-    parser.add_argument(
         "-host",
         "--api_host",
         type=str,
@@ -133,7 +127,7 @@ def main(cmdline_args: list[str]) -> None:
         override_api_base_url=args.override_api_base_url,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    client.upload_files_with_drs(filename=args.file)
 
 
 if __name__ == "__main__":

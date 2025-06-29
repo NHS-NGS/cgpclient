@@ -19,17 +19,16 @@ from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel
 
 from cgpclient.dragen import upload_dragen_run
-from cgpclient.drs import DrsObject, download_object_data, get_access_url
-from cgpclient.drsupload import upload_file_with_drs
+from cgpclient.drs import DrsObject, get_drs_object
+from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.fhir import (  # type: ignore
     CGPServiceRequest,
     ClientConfig,
-    PedigreeRole,
     get_patient,
     get_resource,
     get_service_request,
-    search_for_document_reference,
-    upload_file,
+    search_for_document_references,
+    upload_files,
 )
 from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException
 
@@ -45,21 +44,15 @@ class CGPFile:
     drs_url: str
     content_type: str
     last_updated: str
-    lab_sample_id: str | None = None
+    sample_id: str | None = None
     run_id: str | None = None
     referral_id: str | None = None
-
-
-class GenomicFile(BaseModel):
-    referral_id: str
-    participant_id: str
-    pedigree_role: PedigreeRole
-    ngis_document_category: str
+    s3_url: str | None = None
     htsget_url: str | None = None
 
 
-class GenomicFiles(BaseModel):
-    files: list[GenomicFile]
+class CGPReferral:
+    referral_id: str
 
 
 class NHSOAuthToken(BaseModel):
@@ -230,13 +223,16 @@ class CGPClient:
         """Download the DRS object data attached to the DocumentReference"""
         for content in document_reference.content:
             url: str = content.attachment.url  # type: ignore
+            doc_ref_hash: str = content.attachment.hash.decode()  # type: ignore
             if url.startswith("drs://"):
-                download_object_data(
-                    drs_url=url,
+                drs_object: DrsObject = get_drs_object(
+                    drs_url=url, expected_hash=doc_ref_hash, client=self
+                )
+                drs_object.download_data(
                     output=output,
-                    client=self,
                     force_overwrite=force_overwrite,
-                    object_hash=content.attachment.hash.decode(),  # type: ignore
+                    expected_hash=doc_ref_hash,
+                    client=self,
                 )
                 return
         raise CGPClientException("Could not find DRS URL in DocumentReference")
@@ -259,7 +255,7 @@ class CGPClient:
             )
         else:
             # search for a matching file
-            bundle: Bundle = search_for_document_reference(
+            bundle: Bundle = search_for_document_references(
                 client=self,
             )
             if bundle.entry:
@@ -281,15 +277,17 @@ class CGPClient:
         )
 
     @typing.no_type_check
-    def list_files(self) -> list[CGPFile]:
-        bundle: Bundle = search_for_document_reference(
+    def list_files(
+        self, include_drs_access_urls: bool = False, mime_type: str | None = None
+    ) -> list[CGPFile]:
+        bundle: Bundle = search_for_document_references(
             client=self,
         )
 
         result: list[CGPFile] = []
 
         if bundle.entry:
-            logging.info("Found %i matching files", len(bundle.entry))
+            logging.info("Found %i matching files in FHIR server", len(bundle.entry))
             for entry in bundle.entry:
                 details: dict = {}
 
@@ -325,15 +323,40 @@ class CGPClient:
                         elif related.type == Procedure.__name__:
                             details["run_id"] = related.identifier.value
                         elif related.type == Specimen.__name__:
-                            details["lab_sample_id"] = related.identifier.value
+                            details["sample_id"] = related.identifier.value
 
                 if document_reference.content and len(document_reference.content) == 1:
                     attachment: dict = document_reference.content[0].attachment
                     details["name"] = attachment.title
                     details["content_type"] = attachment.contentType
-                    details["hash"] = attachment.hash
+                    details["hash"] = attachment.hash.decode()
                     details["size"] = attachment.size
                     details["drs_url"] = attachment.url
+
+                    if (
+                        mime_type is not None
+                        and mime_type not in attachment.contentType
+                    ):
+                        # filter to specified MIME type
+                        logging.debug(
+                            "Skipping file which doesn't match MIME type %s, %s",
+                            mime_type,
+                            attachment.contentType,
+                        )
+                        continue
+
+                    if include_drs_access_urls:
+                        drs_object: DrsObject = get_drs_object(
+                            drs_url=attachment.url,
+                            client=self,
+                            expected_hash=details["hash"],
+                        )
+
+                        for access_method in drs_object.access_methods:
+                            details[f"{access_method.type}_url"] = (
+                                access_method.access_url.url
+                            )
+
                 else:
                     raise CGPClientException("Unexpected number of attachments")
 
@@ -343,41 +366,22 @@ class CGPClient:
                     logging.debug(document_reference.json(exclude_none=True))
                     raise CGPClientException("Invalid DocumentReference") from e
 
+        logging.info("Found %i matching files after all filters", len(result))
         return result
 
-    def get_genomic_files(self, referral_id: str) -> GenomicFiles:
-        """Retrieve details of genomic files associated with an NGIS referral ID"""
-        service_request: CGPServiceRequest = self.get_service_request(referral_id)
-        pedigree_roles: dict[str, PedigreeRole] = service_request.get_pedigree_roles(
-            client=self
+    def upload_files_with_drs(
+        self,
+        filename: Path,
+    ) -> list[DrsObject]:
+        """Upload a file using the DRS upload protocol"""
+        return upload_files_with_drs(
+            filenames=[filename],
+            client=self,
         )
-        files: list[GenomicFile] = []
-        for doc_ref in service_request.document_references(client=self):
-            files.append(
-                GenomicFile(
-                    referral_id=referral_id,
-                    participant_id=doc_ref.participant_id(),
-                    ngis_document_category=",".join(
-                        doc_ref.ngis_document_category_codes()
-                    ),
-                    htsget_url=get_access_url(
-                        object_url=doc_ref.url(), access_type="htsget", client=self
-                    ),
-                    pedigree_role=pedigree_roles[doc_ref.participant_id()],
-                )
-            )
 
-        return GenomicFiles(files=files)
-
-    def upload_file_with_drs(
-        self, filename: Path, mime_type: str | None = None
-    ) -> DrsObject:
-        """Upload a file using the DRS upload protocol"""
-        return upload_file_with_drs(filename=filename, mime_type=mime_type, client=self)
-
-    def upload_file(self, filename: Path) -> None:
-        """Upload a file using the DRS upload protocol"""
-        upload_file(filename=filename, client=self)
+    def upload_files(self, filenames: list[Path]) -> None:
+        """Upload the files using the DRS upload protocol"""
+        upload_files(filenames=filenames, client=self)
 
     def upload_dragen_run(
         self,

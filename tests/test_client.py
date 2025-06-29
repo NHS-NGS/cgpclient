@@ -27,7 +27,7 @@ from cgpclient.drsupload import (
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
-    upload_file_with_drs,
+    upload_files_with_drs,
 )
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
@@ -366,7 +366,7 @@ def test_upload_file(
     mock_s3_upload.return_value = "foo"
     mock_put_object.return_value = None
 
-    drs_object: DrsObject = upload_file_with_drs(
+    drs_object: DrsObject = upload_files_with_drs(
         filename=filename,
         mime_type=mime_type,
         api_base_url="foo.com/api",

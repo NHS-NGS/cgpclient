@@ -59,6 +59,21 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Show all file details rather than summary",
     )
     parser.add_argument(
+        "-m",
+        "--mime_type",
+        type=str,
+        help="Only include files with this MIME type",
+    )
+    parser.add_argument(
+        "-u",
+        "--include_drs_access_urls",
+        action="store_true",
+        help=(
+            "Fetch the access URLs from DRS for each file, "
+            "using this option will slow down retrieval"
+        ),
+    )
+    parser.add_argument(
         "-host",
         "--api_host",
         type=str,
@@ -172,23 +187,32 @@ def main(cmdline_args: list[str]) -> None:
         config=config,
     )
 
-    files: list[CGPFile] = client.list_files()
+    files: list[CGPFile] = client.list_files(
+        include_drs_access_urls=args.include_drs_access_urls, mime_type=args.mime_type
+    )
 
+    files.sort(key=lambda f: f.name)
+
+    # columns to include for summary output
     short_cols: list[str] = [
         "name",
         "size",
         "content_type",
-        "author_ods_code",
         "last_updated",
+        "author_ods_code",
         "referral_id",
         "participant_id",
-        "lab_sample_id",
+        "sample_id",
         "run_id",
     ]
 
+    # additional columns (rather verbose)
     all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
 
     cols = all_cols if args.all else short_cols
+
+    if args.include_drs_access_urls:
+        cols.extend(["s3_url", "htsget_url"])
 
     print(tabulate([[getattr(f, c) for c in cols] for f in files], headers=cols))
 

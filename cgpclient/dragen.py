@@ -25,11 +25,11 @@ from cgpclient.fhir import (  # type: ignore
     DocumentReferenceRelationship,
     ProcedureStatus,
     bundle_for,
-    create_drs_document_reference,
+    create_drs_document_references,
     post_fhir_resource,
     reference_for,
 )
-from cgpclient.utils import create_uuid, get_current_datetime
+from cgpclient.utils import CGPClientException, create_uuid, get_current_datetime
 
 
 class FastqListEntry(BaseModel):
@@ -85,36 +85,34 @@ def fastq_list_entry_to_document_references(
     """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
 
-    read1_doc_ref: DocumentReference = create_drs_document_reference(
-        filename=entry.Read1File,
+    fastq_files: list[Path] = [entry.Read1File]
+
+    if entry.Read2File:
+        fastq_files.append(entry.Read2File)
+
+    doc_refs: list[DocumentReference] = create_drs_document_references(
+        filenames=fastq_files,
         client=client,
     )
 
-    doc_refs: list[DocumentReference] = [read1_doc_ref]
-
     if entry.Read2File:
-        # upload the second read group & relate it to the first
-        read2_doc_ref: DocumentReference = create_drs_document_reference(
-            filename=entry.Read2File,
-            client=client,
-        )
-
         # add relationship between the paired FASTQs
-        read2_doc_ref.relatesTo = [
+        if len(doc_refs) != 2:
+            raise CGPClientException("Unexpected number of DocumentReferences")
+
+        doc_refs[0].relatesTo = [
             DocumentReferenceRelatesTo(
                 code=DocumentReferenceRelationship.APPENDS,
-                target=reference_for(read1_doc_ref),
+                target=reference_for(doc_refs[1]),
             )
         ]
 
-        read1_doc_ref.relatesTo = [
+        doc_refs[1].relatesTo = [
             DocumentReferenceRelatesTo(
                 code=DocumentReferenceRelationship.TRANSFORMS,
-                target=reference_for(read2_doc_ref),
+                target=reference_for(doc_refs[0]),
             )
         ]
-
-        doc_refs.append(read2_doc_ref)
 
     return doc_refs
 
@@ -237,7 +235,7 @@ def map_entries_to_bundle(
 
     if run_info_file is not None:
         document_references.append(
-            create_drs_document_reference(
+            create_drs_document_references(
                 filename=run_info_file,
                 client=client,
             )

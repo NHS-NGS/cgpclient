@@ -35,7 +35,7 @@ from fhir.resources.R4B.specimen import Specimen
 
 import cgpclient
 from cgpclient.drs import DrsObject
-from cgpclient.drsupload import upload_file_with_drs
+from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.utils import (
     REQUEST_TIMEOUT_SECS,
     CGPClientException,
@@ -352,33 +352,38 @@ def document_reference_for_drs_object(
     )
 
 
-def create_drs_document_reference(
-    filename: Path,
+def create_drs_document_references(
+    filenames: list[Path],
     client: cgpclient.client.CGPClient,
-) -> DocumentReference:
-    """Upload the file using the DRS upload protocol and return a DocumentReference"""
-    drs_object: DrsObject = upload_file_with_drs(filename=filename, client=client)
-
-    return document_reference_for_drs_object(
-        drs_object=drs_object,
-        client=client,
+) -> list[DocumentReference]:
+    """Upload the files using the DRS upload protocol and return a DocumentReference"""
+    drs_objects: list[DrsObject] = upload_files_with_drs(
+        filenames=filenames, client=client
     )
 
+    return [
+        document_reference_for_drs_object(
+            drs_object=o,
+            client=client,
+        )
+        for o in drs_objects
+    ]
 
-def upload_file(
-    filename: Path,
+
+def upload_files(
+    filenames: list[Path],
     client: cgpclient.client.CGPClient,
 ) -> None:
-    """Upload the file using the DRS upload protocol and post a
-    DocumentReference to the FHIR server"""
+    """Upload the files using the DRS upload protocol and post
+    DocumentReferences to the FHIR server"""
 
-    document_reference: DocumentReference = create_drs_document_reference(
-        filename=filename,
+    document_references: list[DocumentReference] = create_drs_document_references(
+        filenames=filenames,
         client=client,
     )
 
     post_fhir_resource(
-        resource=bundle_for([document_reference]),
+        resource=bundle_for(document_references),
         client=client,
     )
 
@@ -436,7 +441,7 @@ def post_fhir_resource(
         )
 
 
-def search_for_document_reference(
+def search_for_document_references(
     client: cgpclient.client.CGPClient, query_params: dict[str, str] | None = None
 ) -> Bundle:
     if query_params is None:

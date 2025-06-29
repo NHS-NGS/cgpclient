@@ -27,6 +27,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument(
+        "-i",
+        "--index_file",
+        type=Path,
+        help="Index file to include in upload",
+    )
+    parser.add_argument(
         "-r",
         "--referral_id",
         type=str,
@@ -174,7 +180,12 @@ def main(cmdline_args: list[str]) -> None:
         config=config,
     )
 
-    client.upload_file(filename=args.file)
+    files: list[Path] = [args.file]
+
+    if args.index_file is not None:
+        files.append(args.index_file)
+
+    client.upload_files(filenames=files)
 
 
 if __name__ == "__main__":
