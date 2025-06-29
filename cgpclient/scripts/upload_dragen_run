@@ -1,34 +1,25 @@
+#!/usr/bin/env python3
+
 import argparse
 import logging
 import sys
 from pathlib import Path
 
 import yaml  # type: ignore
-from tabulate import tabulate  # type: ignore
 
-from cgpclient.client import CGPClient, CGPFile
+from cgpclient.client import CGPClient
 from cgpclient.fhir import ClientConfig  # type: ignore
+from cgpclient.utils import APIM_BASE_URL
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch details of genomic files associated with the supplied identifiers"
+            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata. "
+            "The sample is assumed to be a germline sample taken from blood unless a "
+            "tumour ID is supplied."
         )
     )
-    parser.add_argument(
-        "-r",
-        "--referral_id",
-        type=str,
-        help="NGIS referral ID, e.g r30000000001",
-    )
-    parser.add_argument(
-        "-p",
-        "--participant_id",
-        type=str,
-        help="NGIS participant ID, e.g p12345678303",
-    )
-    parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
     parser.add_argument(
         "-id",
         "--run_id",
@@ -37,6 +28,48 @@ def parse_args(args: list[str]) -> argparse.Namespace:
             "Unique identifier for the sequencing run that generated the FASTQs, "
             "for a DRAGEN run this should be the run folder name"
         ),
+        required=True,
+    )
+    parser.add_argument(
+        "-rif",
+        "--run_info_file",
+        type=Path,
+        help="Path to the Illumina RunInfo.xml file with details of the sequencing run",
+    )
+    parser.add_argument(
+        "-f",
+        "--fastq_list",
+        type=Path,
+        help=(
+            "DRAGEN FASTQ list CSV file, following the format described here: "
+            "https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm)"  # noqa: E501
+        ),
+        required=True,
+    )
+    parser.add_argument(
+        "-s",
+        "--sample_id",
+        type=str,
+        help=(
+            "Sample identifer (RGSM) to include in the upload, "
+            "if not supplied this script will use the first RGSM value found."
+            "The sample is assumed be to germline unless the --tumour_id "
+            "argument is supplied"
+        ),
+    )
+    parser.add_argument(
+        "-r",
+        "--referral_id",
+        type=str,
+        help="NGIS referral identifier for the test order",
+        required=True,
+    )
+    parser.add_argument(
+        "-p",
+        "--participant_id",
+        type=str,
+        help="NGIS participant identifier for the sample",
+        required=True,
     )
     parser.add_argument(
         "-t",
@@ -51,17 +84,11 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="ODS code for your organisation",
     )
     parser.add_argument(
-        "-a",
-        "--all",
-        action="store_true",
-        help="Show all file details rather than summary",
-    )
-    parser.add_argument(
         "-host",
         "--api_host",
         type=str,
-        help="API host base URL (default api.service.nhs.uk)",
-        default="api.service.nhs.uk",
+        help=f"API host base URL (default {APIM_BASE_URL})",
+        default=APIM_BASE_URL,
     )
     parser.add_argument(
         "-api",
@@ -105,12 +132,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default="test-1",
     )
     parser.add_argument(
-        "-pp",
-        "--pretty_print",
-        action="store_true",
-        help="Pretty print JSON output",
-    )
-    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -129,6 +150,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
+    parser.add_argument(
+        "-dr",
+        "--dry_run",
+        action="store_true",
+        help="Just create the DRS and FHIR resources, don't actually upload anything",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -145,11 +172,10 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 def main(cmdline_args: list[str]) -> None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
-    if args.verbose:
-        logging.getLogger().setLevel(logging.INFO)
-
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
+    elif args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
 
     config: ClientConfig = ClientConfig(
         ods_code=args.ods_code,
@@ -167,28 +193,14 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        dry_run=args.dry_run,
         config=config,
     )
 
-    files: list[CGPFile] = client.list_files()
-
-    short_cols: list[str] = [
-        "name",
-        "size",
-        "content_type",
-        "author_ods_code",
-        "last_updated",
-        "referral_id",
-        "participant_id",
-        "lab_sample_id",
-        "run_id",
-    ]
-
-    all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
-
-    cols = all_cols if args.all else short_cols
-
-    print(tabulate([[getattr(f, c) for c in cols] for f in files], headers=cols))
+    client.upload_dragen_run(
+        fastq_list_csv=args.fastq_list,
+        run_info_file=args.run_info_file,
+    )
 
 
 if __name__ == "__main__":

@@ -1,41 +1,22 @@
+#!/usr/bin/env python3
+
 import argparse
 import logging
 import sys
 from pathlib import Path
 
 import yaml  # type: ignore
+from tabulate import tabulate  # type: ignore
 
-from cgpclient.client import CGPClient
+from cgpclient.client import CGPClient, CGPFile
 from cgpclient.fhir import ClientConfig  # type: ignore
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=("Fetch a file associated with an NGIS referral ID")
-    )
-    parser.add_argument(
-        "-f",
-        "--file_id",
-        type=str,
-        help="Identifier for the file (filename) associated with a DocumentReference",
-    )
-    parser.add_argument(
-        "-d",
-        "--document_reference",
-        type=str,
-        help="DocumentReference ID",
-    )
-    parser.add_argument(
-        "-y",
-        "--force_overwrite",
-        action="store_true",
-        help="Overwrite existing file without prompting",
-    )
-    parser.add_argument(
-        "-out",
-        "--output",
-        type=Path,
-        help="Local path for the downloaded file",
+        description=(
+            "Fetch details of genomic files associated with the supplied identifiers"
+        )
     )
     parser.add_argument(
         "-r",
@@ -47,13 +28,35 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "-p",
         "--participant_id",
         type=str,
-        help="NGIS participant ID",
+        help="NGIS participant ID, e.g p12345678303",
+    )
+    parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
+    parser.add_argument(
+        "-id",
+        "--run_id",
+        type=str,
+        help=(
+            "Unique identifier for the sequencing run that generated the FASTQs, "
+            "for a DRAGEN run this should be the run folder name"
+        ),
+    )
+    parser.add_argument(
+        "-t",
+        "--tumour_id",
+        type=str,
+        help="Histopathology or SIHMDS identifier for a tumour sample",
     )
     parser.add_argument(
         "-o",
         "--ods_code",
         type=str,
         help="ODS code for your organisation",
+    )
+    parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="Show all file details rather than summary",
     )
     parser.add_argument(
         "-host",
@@ -151,10 +154,12 @@ def main(cmdline_args: list[str]) -> None:
         logging.getLogger().setLevel(logging.DEBUG)
 
     config: ClientConfig = ClientConfig(
+        ods_code=args.ods_code,
         referral_id=args.referral_id,
         participant_id=args.participant_id,
-        file_id=args.file_id,
-        ods_code=args.ods_code,
+        tumour_id=args.tumour_id,
+        run_id=args.run_id,
+        sample_id=args.sample_id,
     )
 
     client: CGPClient = CGPClient(
@@ -167,11 +172,25 @@ def main(cmdline_args: list[str]) -> None:
         config=config,
     )
 
-    client.download_file(
-        document_reference_id=args.document_reference,
-        output=args.output,
-        force_overwrite=args.force_overwrite,
-    )
+    files: list[CGPFile] = client.list_files()
+
+    short_cols: list[str] = [
+        "name",
+        "size",
+        "content_type",
+        "author_ods_code",
+        "last_updated",
+        "referral_id",
+        "participant_id",
+        "lab_sample_id",
+        "run_id",
+    ]
+
+    all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
+
+    cols = all_cols if args.all else short_cols
+
+    print(tabulate([[getattr(f, c) for c in cols] for f in files], headers=cols))
 
 
 if __name__ == "__main__":
