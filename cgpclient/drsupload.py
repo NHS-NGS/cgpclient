@@ -7,7 +7,7 @@ from pathlib import Path
 try:
     from enum import StrEnum  # type: ignore
 except ImportError:
-    from backports.strenum import StrEnum
+    from backports.strenum import StrEnum  # type: ignore
 
 import boto3  # type: ignore
 import requests  # type: ignore

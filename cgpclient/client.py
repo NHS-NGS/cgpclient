@@ -1,3 +1,4 @@
+# pylint: disable=not-an-iterable,unsubscriptable-object
 from __future__ import annotations
 
 import logging
@@ -228,14 +229,14 @@ class CGPClient:
     ) -> None:
         """Download the DRS object data attached to the DocumentReference"""
         for content in document_reference.content:
-            url: str = content.attachment.url
+            url: str = content.attachment.url  # type: ignore
             if url.startswith("drs://"):
                 download_object_data(
                     drs_url=url,
                     output=output,
                     client=self,
                     force_overwrite=force_overwrite,
-                    object_hash=content.attachment.hash.decode(),
+                    object_hash=content.attachment.hash.decode(),  # type: ignore
                 )
                 return
         raise CGPClientException("Could not find DRS URL in DocumentReference")
@@ -360,7 +361,7 @@ class CGPClient:
                         doc_ref.ngis_document_category_codes()
                     ),
                     htsget_url=get_access_url(
-                        object_url=doc_ref.url(), access_type="htsget", client=client
+                        object_url=doc_ref.url(), access_type="htsget", client=self
                     ),
                     pedigree_role=pedigree_roles[doc_ref.participant_id()],
                 )

@@ -8,7 +8,7 @@ from typing import List
 try:
     from enum import StrEnum  # type: ignore
 except ImportError:
-    from backports.strenum import StrEnum
+    from backports.strenum import StrEnum  # type: ignore
 
 import requests  # type: ignore
 from pydantic import BaseModel, Field, model_validator

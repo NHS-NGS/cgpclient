@@ -6,7 +6,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
-from cgpclient.fhir import ClientConfig
+from cgpclient.fhir import ClientConfig  # type: ignore
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:

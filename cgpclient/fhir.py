@@ -1,5 +1,6 @@
 # type: ignore
 # we ignore type checking here because of incompatibilities with fhir.resources
+# pylint: disable=unsubscriptable-object
 from __future__ import annotations
 
 import logging
@@ -475,12 +476,12 @@ def search_for_fhir_resource(
     client: cgpclient.client.CGPClient,
 ) -> Bundle:
     """Search for a FHIR resource using the query parameters"""
-
+    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
     query_params["_count"] = str(MAX_SEARCH_RESULTS)
 
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
     logging.info("Requesting endpoint: %s", url)
     logging.info("Query parameters: %s", query_params)
+
     response: requests.Response = requests.get(
         url=url,
         headers=client.headers,
@@ -491,6 +492,7 @@ def search_for_fhir_resource(
         logging.debug(response.json())
         bundle: Bundle = Bundle.parse_obj(response.json())
         if bundle.link and len(bundle.link) == 1 and bundle.link[0].relation == "next":
+            # TODO: need to override host
             url: str = bundle.link[0].url
             logging.info(
                 "More than %i results for search, implement paging!", MAX_SEARCH_RESULTS

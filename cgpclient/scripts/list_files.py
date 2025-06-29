@@ -7,7 +7,7 @@ import yaml  # type: ignore
 from tabulate import tabulate  # type: ignore
 
 from cgpclient.client import CGPClient, CGPFile
-from cgpclient.fhir import ClientConfig
+from cgpclient.fhir import ClientConfig  # type: ignore
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
