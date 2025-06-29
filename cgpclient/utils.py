@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 REQUEST_TIMEOUT_SECS = 30
+CHUNK_SIZE_BYTES = 8192
 
 APIM_BASE_URL = "api.service.nhs.uk"
 

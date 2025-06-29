@@ -6,35 +6,61 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
-from cgpclient.utils import APIM_BASE_URL
+from cgpclient.fhir import ClientConfig
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Upload a genomic file associated with an NGIS referral "
-            "and participant ID using the GDAM API in the NHS APIM"
-        )
+        description=("Fetch a file associated with an NGIS referral ID")
     )
     parser.add_argument(
         "-f",
-        "--file",
-        type=Path,
-        help="File to upload",
-        required=True,
+        "--file_id",
+        type=str,
+        help="Identifier for the file (filename) associated with a DocumentReference",
     )
     parser.add_argument(
-        "-t",
-        "--mime_type",
+        "-d",
+        "--document_reference",
         type=str,
-        help="MIME type of the file",
+        help="DocumentReference ID",
+    )
+    parser.add_argument(
+        "-y",
+        "--force_overwrite",
+        action="store_true",
+        help="Overwrite existing file without prompting",
+    )
+    parser.add_argument(
+        "-out",
+        "--output",
+        type=Path,
+        help="Local path for the downloaded file",
+    )
+    parser.add_argument(
+        "-r",
+        "--referral_id",
+        type=str,
+        help="NGIS referral ID, e.g r30000000001",
+    )
+    parser.add_argument(
+        "-p",
+        "--participant_id",
+        type=str,
+        help="NGIS participant ID",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
     )
     parser.add_argument(
         "-host",
         "--api_host",
         type=str,
-        help=f"API host base URL (default {APIM_BASE_URL})",
-        default=APIM_BASE_URL,
+        help="API host base URL (default api.service.nhs.uk)",
+        default="api.service.nhs.uk",
     )
     parser.add_argument(
         "-api",
@@ -78,6 +104,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default="test-1",
     )
     parser.add_argument(
+        "-pp",
+        "--pretty_print",
+        action="store_true",
+        help="Pretty print JSON output",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -96,13 +128,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
-    parser.add_argument(
-        "-d",
-        "--dry_run",
-        type=bool,
-        help="Just create the DRS and FHIR resources, don't actually upload anything",
-        default=False,
-    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -119,10 +144,18 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 def main(cmdline_args: list[str]) -> None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
+    if args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
+
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
-    elif args.verbose:
-        logging.getLogger().setLevel(logging.INFO)
+
+    config: ClientConfig = ClientConfig(
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        file_id=args.file_id,
+        ods_code=args.ods_code,
+    )
 
     client: CGPClient = CGPClient(
         api_host=args.api_host,
@@ -131,9 +164,14 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        config=config,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    client.download_file(
+        document_reference_id=args.document_reference,
+        output=args.output,
+        force_overwrite=args.force_overwrite,
+    )
 
 
 if __name__ == "__main__":

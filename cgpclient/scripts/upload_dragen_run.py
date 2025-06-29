@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
+from cgpclient.fhir import ClientConfig  # type: ignore
 from cgpclient.utils import APIM_BASE_URL
 
 
@@ -18,7 +19,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         )
     )
     parser.add_argument(
-        "-i",
+        "-id",
         "--run_id",
         type=str,
         help=(
@@ -45,7 +46,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "-s",
-        "--fastq_list_sample_id",
+        "--sample_id",
         type=str,
         help=(
             "Sample identifer (RGSM) to include in the upload, "
@@ -56,14 +57,14 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "-r",
-        "--ngis_referral_id",
+        "--referral_id",
         type=str,
         help="NGIS referral identifier for the test order",
         required=True,
     )
     parser.add_argument(
         "-p",
-        "--ngis_participant_id",
+        "--participant_id",
         type=str,
         help="NGIS participant identifier for the sample",
         required=True,
@@ -148,7 +149,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default=Path.home() / ".cgpclient/config.yaml",
     )
     parser.add_argument(
-        "-d",
+        "-dr",
         "--dry_run",
         action="store_true",
         help="Just create the DRS and FHIR resources, don't actually upload anything",
@@ -174,6 +175,15 @@ def main(cmdline_args: list[str]) -> None:
     elif args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
+    config: ClientConfig = ClientConfig(
+        ods_code=args.ods_code,
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        tumour_id=args.tumour_id,
+        run_id=args.run_id,
+        sample_id=args.sample_id,
+    )
+
     client: CGPClient = CGPClient(
         api_host=args.api_host,
         api_name=args.api_name,
@@ -181,18 +191,13 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        dry_run=args.dry_run,
+        config=config,
     )
 
     client.upload_dragen_run(
-        run_id=args.run_id,
         fastq_list_csv=args.fastq_list,
-        fastq_list_sample_id=args.fastq_list_sample_id,
-        ngis_participant_id=args.ngis_participant_id,
-        ngis_referral_id=args.ngis_referral_id,
         run_info_file=args.run_info_file,
-        tumour_id=args.tumour_id,
-        ods_code=args.ods_code,
-        dry_run=args.dry_run,
     )
 
 

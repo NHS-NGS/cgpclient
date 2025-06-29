@@ -17,7 +17,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     )
     parser.add_argument(
         "-r",
-        "--ngis_referral_id",
+        "--referral_id",
         type=str,
         help="NGIS referral ID, e.g r30000000001",
         required=True,
@@ -129,9 +129,7 @@ def main(cmdline_args: list[str]) -> GenomicFiles:
         override_api_base_url=args.override_api_base_url,
     )
 
-    files: GenomicFiles = client.get_genomic_files(
-        ngis_referral_id=args.ngis_referral_id
-    )
+    files: GenomicFiles = client.get_genomic_files(referral_id=args.referral_id)
 
     with (
         open(args.output_file, "w", encoding="utf-8")

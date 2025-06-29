@@ -4,37 +4,64 @@ import sys
 from pathlib import Path
 
 import yaml  # type: ignore
+from tabulate import tabulate  # type: ignore
 
-from cgpclient.client import CGPClient
-from cgpclient.utils import APIM_BASE_URL
+from cgpclient.client import CGPClient, CGPFile
+from cgpclient.fhir import ClientConfig
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Upload a genomic file associated with an NGIS referral "
-            "and participant ID using the GDAM API in the NHS APIM"
+            "Fetch details of genomic files associated with the supplied identifiers"
         )
     )
     parser.add_argument(
-        "-f",
-        "--file",
-        type=Path,
-        help="File to upload",
-        required=True,
+        "-r",
+        "--referral_id",
+        type=str,
+        help="NGIS referral ID, e.g r30000000001",
+    )
+    parser.add_argument(
+        "-p",
+        "--participant_id",
+        type=str,
+        help="NGIS participant ID, e.g p12345678303",
+    )
+    parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
+    parser.add_argument(
+        "-id",
+        "--run_id",
+        type=str,
+        help=(
+            "Unique identifier for the sequencing run that generated the FASTQs, "
+            "for a DRAGEN run this should be the run folder name"
+        ),
     )
     parser.add_argument(
         "-t",
-        "--mime_type",
+        "--tumour_id",
         type=str,
-        help="MIME type of the file",
+        help="Histopathology or SIHMDS identifier for a tumour sample",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
+    )
+    parser.add_argument(
+        "-a",
+        "--all",
+        action="store_true",
+        help="Show all file details rather than summary",
     )
     parser.add_argument(
         "-host",
         "--api_host",
         type=str,
-        help=f"API host base URL (default {APIM_BASE_URL})",
-        default=APIM_BASE_URL,
+        help="API host base URL (default api.service.nhs.uk)",
+        default="api.service.nhs.uk",
     )
     parser.add_argument(
         "-api",
@@ -78,6 +105,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default="test-1",
     )
     parser.add_argument(
+        "-pp",
+        "--pretty_print",
+        action="store_true",
+        help="Pretty print JSON output",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -96,13 +129,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
-    parser.add_argument(
-        "-d",
-        "--dry_run",
-        type=bool,
-        help="Just create the DRS and FHIR resources, don't actually upload anything",
-        default=False,
-    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -119,10 +145,20 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 def main(cmdline_args: list[str]) -> None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
+    if args.verbose:
+        logging.getLogger().setLevel(logging.INFO)
+
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
-    elif args.verbose:
-        logging.getLogger().setLevel(logging.INFO)
+
+    config: ClientConfig = ClientConfig(
+        ods_code=args.ods_code,
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        tumour_id=args.tumour_id,
+        run_id=args.run_id,
+        sample_id=args.sample_id,
+    )
 
     client: CGPClient = CGPClient(
         api_host=args.api_host,
@@ -131,9 +167,28 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        config=config,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    files: list[CGPFile] = client.list_files()
+
+    short_cols: list[str] = [
+        "name",
+        "size",
+        "content_type",
+        "author_ods_code",
+        "last_updated",
+        "referral_id",
+        "participant_id",
+        "lab_sample_id",
+        "run_id",
+    ]
+
+    all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
+
+    cols = all_cols if args.all else short_cols
+
+    print(tabulate([[getattr(f, c) for c in cols] for f in files], headers=cols))
 
 
 if __name__ == "__main__":

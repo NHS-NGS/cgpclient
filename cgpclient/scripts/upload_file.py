@@ -6,6 +6,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
+from cgpclient.fhir import ClientConfig  # type: ignore
 from cgpclient.utils import APIM_BASE_URL
 
 
@@ -24,23 +25,38 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         required=True,
     )
     parser.add_argument(
-        "-t",
-        "--mime_type",
-        type=str,
-        help="MIME type of the file",
-        required=True,
-    )
-    parser.add_argument(
         "-r",
-        "--ngis_referral_id",
+        "--referral_id",
         type=str,
         help="NGIS referral ID, e.g r30000000001",
     )
     parser.add_argument(
         "-p",
-        "--ngis_participant_id",
+        "--participant_id",
         type=str,
         help="NGIS participant ID, e.g p12345678303",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
+    )
+    parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
+    parser.add_argument(
+        "-id",
+        "--run_id",
+        type=str,
+        help=(
+            "Unique identifier for the sequencing run that generated the FASTQs, "
+            "for a DRAGEN run this should be the run folder name"
+        ),
+    )
+    parser.add_argument(
+        "-t",
+        "--tumour_id",
+        type=str,
+        help="Histopathology or SIHMDS identifier for a tumour sample",
     )
     parser.add_argument(
         "-host",
@@ -109,6 +125,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
+    parser.add_argument(
+        "-dr",
+        "--dry_run",
+        action="store_true",
+        help="Just create the DRS and FHIR resources, don't actually upload anything",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -130,6 +152,15 @@ def main(cmdline_args: list[str]) -> None:
     elif args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
+    config: ClientConfig = ClientConfig(
+        ods_code=args.ods_code,
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        run_id=args.run_id,
+        sample_id=args.sample_id,
+        tumour_id=args.tumour_id,
+    )
+
     client: CGPClient = CGPClient(
         api_host=args.api_host,
         api_name=args.api_name,
@@ -137,9 +168,11 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        dry_run=args.dry_run,
+        config=config,
     )
 
-    client.upload_file_with_drs(filename=args.file, mime_type=args.mime_type)
+    client.upload_file(filename=args.file)
 
 
 if __name__ == "__main__":

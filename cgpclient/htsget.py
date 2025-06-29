@@ -6,7 +6,7 @@ def mime_type_to_htsget_endpoint(mime_type: str) -> str:
     mapping: dict[str, str] = {
         "application/cram": "reads",
         "application/bam": "reads",
-        "application/vcf": "variants",
+        "text/vcf": "variants",
     }
 
     if mime_type not in mapping:

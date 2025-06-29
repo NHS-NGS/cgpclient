@@ -395,7 +395,7 @@ def test_get_service_request(mock_server: MagicMock, sr_bundle: dict):
     mock_server.return_value = MockedResponse()
 
     service_request: ServiceRequest = get_service_request(
-        ngis_referral_id="1234", api_base_url="url"
+        referral_id="1234", api_base_url="url"
     )
 
     assert service_request == sr_bundle["entry"][0]["resource"]
@@ -528,8 +528,8 @@ def test_get_genomic_files(
     expected: GenomicFiles = GenomicFiles(
         files=[
             GenomicFile(
-                ngis_referral_id=referral_id,
-                ngis_participant_id=participant_id,
+                referral_id=referral_id,
+                participant_id=participant_id,
                 ngis_document_category=document_category,
                 htsget_url=htsget_url,
                 pedigree_role=PedigreeRole.PROBAND,
@@ -537,7 +537,7 @@ def test_get_genomic_files(
         ]
     )
 
-    files: GenomicFiles = client.get_genomic_files(ngis_referral_id=referral_id)
+    files: GenomicFiles = client.get_genomic_files(referral_id=referral_id)
 
     mock_get_access_url.assert_called_once()
 
