@@ -6,9 +6,8 @@ import sys
 from pathlib import Path
 
 import yaml  # type: ignore
-from tabulate import tabulate  # type: ignore
 
-from cgpclient.client import CGPClient, CGPFile
+from cgpclient.client import CGPClient, CGPFiles
 from cgpclient.fhir import ClientConfig  # type: ignore
 
 
@@ -187,34 +186,15 @@ def main(cmdline_args: list[str]) -> None:
         config=config,
     )
 
-    files: list[CGPFile] = client.list_files(
-        include_drs_access_urls=args.include_drs_access_urls, mime_type=args.mime_type
+    files: CGPFiles = client.list_files(
+        include_drs_access_urls=args.include_drs_access_urls,
     )
 
-    files.sort(key=lambda f: f.name)
-
-    # columns to include for summary output
-    short_cols: list[str] = [
-        "name",
-        "size",
-        "content_type",
-        "last_updated",
-        "author_ods_code",
-        "referral_id",
-        "participant_id",
-        "sample_id",
-        "run_id",
-    ]
-
-    # additional columns (rather verbose)
-    all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
-
-    cols = all_cols if args.all else short_cols
-
-    if args.include_drs_access_urls:
-        cols.extend(["s3_url", "htsget_url"])
-
-    print(tabulate([[getattr(f, c) for c in cols] for f in files], headers=cols))
+    files.print_table(
+        sort_by="name",
+        summary=not args.all,
+        include_drs_access_urls=args.include_drs_access_urls,
+    )
 
 
 if __name__ == "__main__":

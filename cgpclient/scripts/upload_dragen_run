@@ -156,6 +156,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Just create the DRS and FHIR resources, don't actually upload anything",
     )
+    parser.add_argument(
+        "-outdir",
+        "--output_dir",
+        type=Path,
+        help="Output directory for local copies of metadata",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -194,6 +200,7 @@ def main(cmdline_args: list[str]) -> None:
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
         dry_run=args.dry_run,
+        output_dir=args.output_dir,
         config=config,
     )
 

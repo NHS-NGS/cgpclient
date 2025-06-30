@@ -164,18 +164,20 @@ def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
         ],
         subject=client.config.participant_reference,
         request=[client.config.referral_reference],
-        extension=Extension(
-            url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-            valueCodeableConcept=CodeableConcept(
-                coding=[
-                    Coding(
-                        system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                        code="solid-tumour",
-                        display="Solid Tumour",
-                    )
-                ]
-            ),
-        ),
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="solid-tumour",
+                            display="Solid Tumour",
+                        )
+                    ]
+                ),
+            )
+        ],
     )
 
 
@@ -292,6 +294,13 @@ def upload_dragen_run(
         run_info_file=run_info_file,
         client=client,
     )
+
+    if client.output_dir is not None:
+        client.output_dir.mkdir(parents=True, exist_ok=True)
+        output_file: Path = client.output_dir / Path("dragen_bundle.json")
+        logging.info("Writing FHIR Bundle to %s", output_file)
+        with open(output_file, "w", encoding="utf-8") as out:
+            print(bundle.json(exclude_none=True), file=out, end=None)
 
     post_fhir_resource(
         resource=bundle,  # type: ignore

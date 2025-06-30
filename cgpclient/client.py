@@ -17,6 +17,7 @@ from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel
+from tabulate import tabulate
 
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object
@@ -51,8 +52,100 @@ class CGPFile:
     htsget_url: str | None = None
 
 
+@dataclass
+class CGPFiles:
+    files: list[CGPFile]
+
+    def print_table(
+        self,
+        summary: bool = False,
+        include_drs_access_urls: bool = False,
+        sort_by: str = "name",
+        table_format: str = "simple",
+    ) -> None:
+        """Print the list of files as a table"""
+        self.files.sort(key=lambda f: getattr(f, sort_by))
+
+        # columns to include for summary output
+        short_cols: list[str] = [
+            "name",
+            "size",
+            "content_type",
+            "last_updated",
+            "author_ods_code",
+            "referral_id",
+            "participant_id",
+            "sample_id",
+            "run_id",
+        ]
+
+        # additional columns (rather verbose)
+        all_cols: list[str] = short_cols + ["document_reference_id", "drs_url", "hash"]
+
+        cols = short_cols if summary else all_cols
+
+        if include_drs_access_urls:
+            cols.extend(["s3_url", "htsget_url"])
+
+        print(
+            tabulate(
+                [[getattr(f, c) for c in cols] for f in self.files],
+                headers=cols,
+                tablefmt=table_format,
+            )
+        )
+
+
+@dataclass
+class CGPSample:
+    sample_id: str
+
+
+@dataclass
+class CGPSamples:
+    referrals: list[CGPSample]
+
+
+@dataclass
+class CGPRun:
+    run_id: str
+    files: list[CGPFile]
+
+
+@dataclass
+class CGPRuns:
+    referrals: CGPReferrals
+    files: CGPFiles
+    samples: CGPSamples
+
+
+@dataclass
+class CGPParticipant:
+    participant_id: str
+    files: CGPFiles
+    referrals: CGPReferrals
+    samples: CGPSamples
+
+
+@dataclass
+class CGPParticipants:
+    referrals: list[CGPParticipant]
+
+
+@dataclass
 class CGPReferral:
     referral_id: str
+    proband_id: str
+    pedigree: str
+    files: list[CGPFile]
+    participants: list[CGPParticipant]
+    runs: list[CGPRun]
+    samples: list[CGPSample]
+
+
+@dataclass
+class CGPReferrals:
+    referrals: list[CGPReferral]
 
 
 class NHSOAuthToken(BaseModel):
@@ -75,6 +168,7 @@ class CGPClient:
         apim_kid: str | None = None,
         override_api_base_url: bool = False,
         dry_run: bool = False,
+        output_dir: Path | None = None,
         config: ClientConfig | None = None,
     ):
         self.api_key = api_key
@@ -84,6 +178,7 @@ class CGPClient:
         self.apim_kid = apim_kid
         self.override_api_base_url = override_api_base_url
         self.dry_run = dry_run
+        self.output_dir = output_dir
         self.config = ClientConfig() if config is None else config
 
         self._oauth_token: NHSOAuthToken | None = None
@@ -276,10 +371,13 @@ class CGPClient:
             force_overwrite=force_overwrite,
         )
 
+    def list_referrals(self) -> list[CGPReferral]:
+        return []
+
     @typing.no_type_check
     def list_files(
         self, include_drs_access_urls: bool = False, mime_type: str | None = None
-    ) -> list[CGPFile]:
+    ) -> CGPFiles:
         bundle: Bundle = search_for_document_references(
             client=self,
         )
@@ -367,7 +465,7 @@ class CGPClient:
                     raise CGPClientException("Invalid DocumentReference") from e
 
         logging.info("Found %i matching files after all filters", len(result))
-        return result
+        return CGPFiles(files=result)
 
     def upload_files_with_drs(
         self,
