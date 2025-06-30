@@ -14,6 +14,7 @@ import requests  # type: ignore
 from pydantic import BaseModel, Field
 
 import cgpclient
+import cgpclient.client
 from cgpclient.drs import (
     AccessMethod,
     AccessMethodType,
