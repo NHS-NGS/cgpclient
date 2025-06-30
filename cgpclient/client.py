@@ -31,7 +31,12 @@ from cgpclient.fhir import (  # type: ignore
     search_for_document_references,
     upload_files,
 )
-from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException
+from cgpclient.utils import (
+    APIM_BASE_URL,
+    REQUEST_TIMEOUT_SECS,
+    CGPClientException,
+    create_uuid,
+)
 
 
 @dataclass
@@ -41,10 +46,10 @@ class CGPFile:
     author_ods_code: str
     name: str
     size: int
-    hash: str
     drs_url: str
     content_type: str
     last_updated: str
+    hash: str | None = None
     sample_id: str | None = None
     run_id: str | None = None
     referral_id: str | None = None
@@ -183,6 +188,11 @@ class CGPClient:
 
         self._oauth_token: NHSOAuthToken | None = None
         self._using_sandbox_env = self.api_host.startswith("sandbox.")
+
+        if self.output_dir is not None:
+            self.output_dir = self.output_dir / Path(create_uuid())
+            self.output_dir.mkdir(parents=True, exist_ok=True)
+            logging.info("Created output directory: %s", self.output_dir)
 
     @property
     def api_base_url(self) -> str:
@@ -429,7 +439,8 @@ class CGPClient:
                     attachment: dict = document_reference.content[0].attachment
                     details["name"] = attachment.title
                     details["content_type"] = attachment.contentType
-                    details["hash"] = attachment.hash.decode()
+                    if attachment.hash is not None:
+                        details["hash"] = attachment.hash.decode()
                     details["size"] = attachment.size
                     details["drs_url"] = attachment.url
 

@@ -295,13 +295,6 @@ def upload_dragen_run(
         client=client,
     )
 
-    if client.output_dir is not None:
-        client.output_dir.mkdir(parents=True, exist_ok=True)
-        output_file: Path = client.output_dir / Path("dragen_bundle.json")
-        logging.info("Writing FHIR Bundle to %s", output_file)
-        with open(output_file, "w", encoding="utf-8") as out:
-            print(bundle.json(exclude_none=True), file=out, end=None)
-
     post_fhir_resource(
         resource=bundle,  # type: ignore
         client=client,

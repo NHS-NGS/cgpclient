@@ -204,6 +204,10 @@ CGPClientDevice: Device = Device(
 )
 
 
+def create_resource_from_dict(data: dict) -> DomainResource:
+    return construct_fhir_element(data["resourceType"], data)
+
+
 def reference_for(
     resource: DomainResource,
     include_first_identifier: bool = False,
@@ -418,6 +422,13 @@ def post_fhir_resource(
     if client.dry_run:
         logging.info("Dry run, so skipping posting resource")
         return
+
+    if client.output_dir is not None:
+        client.output_dir.mkdir(parents=True, exist_ok=True)
+        output_file: Path = client.output_dir / Path("fhir_resources.json")
+        logging.info("Writing FHIR resource to %s", output_file)
+        with open(output_file, "a", encoding="utf-8") as out:
+            print(resource.json(exclude_none=True), file=out)
 
     response: requests.Response = requests.post(
         url=url,
