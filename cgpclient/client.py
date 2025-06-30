@@ -318,7 +318,9 @@ class CGPClient:
         """Download the DRS object data attached to the DocumentReference"""
         for content in document_reference.content:
             url: str = content.attachment.url  # type: ignore
-            doc_ref_hash: str = content.attachment.hash.decode()  # type: ignore
+            doc_ref_hash: str | None = None
+            if content.attachment.hash is not None:  # type: ignore
+                doc_ref_hash = content.attachment.hash.decode()  # type: ignore
             if url.startswith("drs://"):
                 drs_object: DrsObject = get_drs_object(
                     drs_url=url, expected_hash=doc_ref_hash, client=self
