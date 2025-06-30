@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import logging
 import sys
@@ -6,28 +8,80 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
+from cgpclient.fhir import ClientConfig  # type: ignore
 from cgpclient.utils import APIM_BASE_URL
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Upload a genomic file associated with an NGIS referral "
-            "and participant ID using the GDAM API in the NHS APIM"
+            "Read a DRAGEN CSV format FASTQ list, upload the FASTQs and sample metadata. "
+            "The sample is assumed to be a germline sample taken from blood unless a "
+            "tumour ID is supplied."
         )
     )
     parser.add_argument(
-        "-f",
-        "--file",
+        "-id",
+        "--run_id",
+        type=str,
+        help=(
+            "Unique identifier for the sequencing run that generated the FASTQs, "
+            "for a DRAGEN run this should be the run folder name"
+        ),
+        required=True,
+    )
+    parser.add_argument(
+        "-rif",
+        "--run_info_file",
         type=Path,
-        help="File to upload",
+        help="Path to the Illumina RunInfo.xml file with details of the sequencing run",
+    )
+    parser.add_argument(
+        "-f",
+        "--fastq_list",
+        type=Path,
+        help=(
+            "DRAGEN FASTQ list CSV file, following the format described here: "
+            "https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm)"  # noqa: E501
+        ),
+        required=True,
+    )
+    parser.add_argument(
+        "-s",
+        "--sample_id",
+        type=str,
+        help=(
+            "Sample identifer (RGSM) to include in the upload, "
+            "if not supplied this script will use the first RGSM value found."
+            "The sample is assumed be to germline unless the --tumour_id "
+            "argument is supplied"
+        ),
+    )
+    parser.add_argument(
+        "-r",
+        "--referral_id",
+        type=str,
+        help="NGIS referral identifier for the test order",
+        required=True,
+    )
+    parser.add_argument(
+        "-p",
+        "--participant_id",
+        type=str,
+        help="NGIS participant identifier for the sample",
         required=True,
     )
     parser.add_argument(
         "-t",
-        "--mime_type",
+        "--tumour_id",
         type=str,
-        help="MIME type of the file",
+        help="Histopathology or SIHMDS identifier for a tumour sample",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
     )
     parser.add_argument(
         "-host",
@@ -97,11 +151,10 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default=Path.home() / ".cgpclient/config.yaml",
     )
     parser.add_argument(
-        "-d",
+        "-dr",
         "--dry_run",
-        type=bool,
+        action="store_true",
         help="Just create the DRS and FHIR resources, don't actually upload anything",
-        default=False,
     )
 
     parsed: argparse.Namespace = parser.parse_args(args)
@@ -124,6 +177,15 @@ def main(cmdline_args: list[str]) -> None:
     elif args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
+    config: ClientConfig = ClientConfig(
+        ods_code=args.ods_code,
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        tumour_id=args.tumour_id,
+        run_id=args.run_id,
+        sample_id=args.sample_id,
+    )
+
     client: CGPClient = CGPClient(
         api_host=args.api_host,
         api_name=args.api_name,
@@ -131,10 +193,13 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        dry_run=args.dry_run,
+        config=config,
     )
 
-    client.upload_file_with_drs(
-        filename=args.file, mime_type=args.mime_type, dry_run=args.dry_run
+    client.upload_dragen_run(
+        fastq_list_csv=args.fastq_list,
+        run_info_file=args.run_info_file,
     )
 
 

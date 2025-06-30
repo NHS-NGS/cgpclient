@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import argparse
 import logging
 import sys
@@ -5,22 +7,55 @@ from pathlib import Path
 
 import yaml  # type: ignore
 
-from cgpclient.client import CGPClient, GenomicFiles
+from cgpclient.client import CGPClient
+from cgpclient.fhir import ClientConfig  # type: ignore
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "Fetch details of genomic files associated with an "
-            "NGIS referral ID using the GDAM API in the NHS APIM"
-        )
+        description=("Fetch a file associated with an NGIS referral ID")
+    )
+    parser.add_argument(
+        "-f",
+        "--file_id",
+        type=str,
+        help="Identifier for the file (filename) associated with a DocumentReference",
+    )
+    parser.add_argument(
+        "-d",
+        "--document_reference",
+        type=str,
+        help="DocumentReference ID",
+    )
+    parser.add_argument(
+        "-y",
+        "--force_overwrite",
+        action="store_true",
+        help="Overwrite existing file without prompting",
+    )
+    parser.add_argument(
+        "-out",
+        "--output",
+        type=Path,
+        help="Local path for the downloaded file",
     )
     parser.add_argument(
         "-r",
-        "--ngis_referral_id",
+        "--referral_id",
         type=str,
         help="NGIS referral ID, e.g r30000000001",
-        required=True,
+    )
+    parser.add_argument(
+        "-p",
+        "--participant_id",
+        type=str,
+        help="NGIS participant ID",
+    )
+    parser.add_argument(
+        "-o",
+        "--ods_code",
+        type=str,
+        help="ODS code for your organisation",
     )
     parser.add_argument(
         "-host",
@@ -71,9 +106,6 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         default="test-1",
     )
     parser.add_argument(
-        "-o", "--output_file", type=Path, help="Output file (default STDOUT)"
-    )
-    parser.add_argument(
         "-pp",
         "--pretty_print",
         action="store_true",
@@ -111,7 +143,7 @@ def parse_args(args: list[str]) -> argparse.Namespace:
     return parsed
 
 
-def main(cmdline_args: list[str]) -> GenomicFiles:
+def main(cmdline_args: list[str]) -> None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
     if args.verbose:
@@ -120,6 +152,13 @@ def main(cmdline_args: list[str]) -> GenomicFiles:
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
+    config: ClientConfig = ClientConfig(
+        referral_id=args.referral_id,
+        participant_id=args.participant_id,
+        file_id=args.file_id,
+        ods_code=args.ods_code,
+    )
+
     client: CGPClient = CGPClient(
         api_host=args.api_host,
         api_name=args.api_name,
@@ -127,22 +166,14 @@ def main(cmdline_args: list[str]) -> GenomicFiles:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
+        config=config,
     )
 
-    files: GenomicFiles = client.get_genomic_files(
-        ngis_referral_id=args.ngis_referral_id
+    client.download_file(
+        document_reference_id=args.document_reference,
+        output=args.output,
+        force_overwrite=args.force_overwrite,
     )
-
-    with (
-        open(args.output_file, "w", encoding="utf-8")
-        if args.output_file
-        else sys.stdout
-    ) as output:
-        print(
-            files.model_dump_json(indent=4 if args.pretty_print else None), file=output
-        )
-
-    return files
 
 
 if __name__ == "__main__":

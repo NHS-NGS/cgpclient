@@ -5,37 +5,31 @@ import logging
 import typing
 from pathlib import Path
 
-from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
 from fhir.resources.R4B.composition import Composition, CompositionSection
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
-    DocumentReferenceContent,
-    DocumentReferenceContext,
     DocumentReferenceRelatesTo,
 )
 from fhir.resources.R4B.extension import Extension
-from fhir.resources.R4B.identifier import Identifier
-from fhir.resources.R4B.patient import Patient
-from fhir.resources.R4B.reference import Reference
-from fhir.resources.R4B.servicerequest import ServiceRequest
-from fhir.resources.R4B.specimen import Specimen, SpecimenCollection
+from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
+from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
-from cgpclient.drs import DrsObject
-from cgpclient.drsupload import upload_file_with_drs
+import cgpclient
+import cgpclient.client
 from cgpclient.fhir import (  # type: ignore
     CompositionStatus,
-    DocumentReferenceDocStatus,
     DocumentReferenceRelationship,
-    DocumentReferenceStatus,
+    ProcedureStatus,
     bundle_for,
+    create_drs_document_references,
     post_fhir_resource,
     reference_for,
 )
-from cgpclient.utils import create_uuid, get_current_datetime
+from cgpclient.utils import CGPClientException, create_uuid, get_current_datetime
 
 
 class FastqListEntry(BaseModel):
@@ -49,199 +43,90 @@ class FastqListEntry(BaseModel):
     Read2File: Path | None = None
 
 
+def resolve_path(fastq_list_csv: Path, fastq: Path):
+    return (fastq_list_csv.parent / fastq).resolve()
+
+
 def read_fastq_list(
-    fastq_list_csv: Path, fastq_list_sample_id: str | None = None
+    fastq_list_csv: Path, sample_id: str | None = None
 ) -> list[FastqListEntry]:
     """Read a DRAGEN format FASTQ list CSV file"""
     entries: list[FastqListEntry] = []
     with open(fastq_list_csv, mode="r", encoding="utf8") as file:
         for row in csv.DictReader(file):
             entry: FastqListEntry = FastqListEntry.model_validate(row)
-            if fastq_list_sample_id is None:
+            if sample_id is None:
                 logging.info("Using first RGSM found in file: %s", entry.RGSM)
-                fastq_list_sample_id = entry.RGSM
-            if entry.RGSM == fastq_list_sample_id:
+                sample_id = entry.RGSM
+            if entry.RGSM == sample_id:
+                # resolve the FASTQ paths relative to the directory
+                # containing the FASTQ list CSV (if necessary)
+                entry.Read1File = resolve_path(
+                    fastq_list_csv=fastq_list_csv, fastq=entry.Read1File
+                )
+                if entry.Read2File is not None:
+                    entry.Read2File = resolve_path(
+                        fastq_list_csv=fastq_list_csv, fastq=entry.Read2File
+                    )
+
                 entries.append(entry)
             else:
-                logging.info("Ignoring RGSM: %s", entry.RGSM)
+                logging.debug("Ignoring RGSM: %s", entry.RGSM)
 
     logging.info("Read %i entries from FASTQ list file", len(entries))
     return entries
 
 
 @typing.no_type_check
-def document_reference_for_drs_fastq(
-    drs_object: DrsObject,
-    specimen: Specimen,
-    ods_code: str,
-    pair_num: int | None = None,
-) -> DocumentReference:
-    """Create a DocumentReference resource for a DRS object pointing to a FASTQ file"""
-    document_reference: DocumentReference = DocumentReference(
-        id=create_uuid(),
-        status=DocumentReferenceStatus.CURRENT,
-        docStatus=DocumentReferenceDocStatus.FINAL,
-        author=[
-            Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                )
-            )
-        ],
-        subject=specimen.subject,
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="https://genomicsengland.co.uk/genomics-file-types",
-                    code="FASTQ",
-                )
-            ]
-        ),
-        content=[
-            DocumentReferenceContent(
-                attachment=Attachment(
-                    url=drs_object.self_uri,
-                    contentType=drs_object.mime_type,
-                    title=drs_object.name,
-                    size=drs_object.size,
-                    hash=drs_object.checksums[0].checksum,
-                )
-            ),
-        ],
-        context=DocumentReferenceContext(
-            related=specimen.request + [reference_for(specimen)]
-        ),
-    )
-
-    if pair_num is not None:
-        document_reference.category = [
-            CodeableConcept(
-                coding=[
-                    Coding(
-                        system="https://genomicsengland.co.uk/genomic-file-types",
-                        code=f"FASTQ-READ-GROUP-{pair_num}",
-                    )
-                ]
-            )
-        ]
-
-    return document_reference
-
-
-@typing.no_type_check
 def fastq_list_entry_to_document_references(
     entry: FastqListEntry,
-    specimen: Specimen,
-    ods_code: str,
-    api_base_url: str,
-    headers: dict[str, str],
-    dry_run: bool = False,
+    client: cgpclient.client.CGPClient,
 ) -> list[DocumentReference]:
     """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
-    read1_drs_object: DrsObject = upload_file_with_drs(
-        filename=entry.Read1File,
-        api_base_url=api_base_url,
-        headers=headers,
-        dry_run=dry_run,
-    )
 
-    read1_doc_ref: DocumentReference = document_reference_for_drs_fastq(
-        drs_object=read1_drs_object,
-        specimen=specimen,
-        ods_code=ods_code,
-        pair_num=1 if entry.Read2File else None,
-    )
-
-    doc_refs: list[DocumentReference] = [read1_doc_ref]
+    fastq_files: list[Path] = [entry.Read1File]
 
     if entry.Read2File:
-        # upload the second read group & relate it to the first
-        read2_drs_object: DrsObject = upload_file_with_drs(
-            filename=entry.Read2File,
-            api_base_url=api_base_url,
-            headers=headers,
-            dry_run=dry_run,
-        )
+        fastq_files.append(entry.Read2File)
 
-        read2_doc_ref: DocumentReference = document_reference_for_drs_fastq(
-            drs_object=read2_drs_object,
-            specimen=specimen,
-            ods_code=ods_code,
-            pair_num=2,
-        )
+    doc_refs: list[DocumentReference] = create_drs_document_references(
+        filenames=fastq_files,
+        client=client,
+    )
 
+    if entry.Read2File:
         # add relationship between the paired FASTQs
-        read2_doc_ref.relatesTo = [
+        if len(doc_refs) != 2:
+            raise CGPClientException("Unexpected number of DocumentReferences")
+
+        doc_refs[0].relatesTo = [
             DocumentReferenceRelatesTo(
                 code=DocumentReferenceRelationship.APPENDS,
-                target=reference_for(read1_doc_ref),
+                target=reference_for(doc_refs[1]),
             )
         ]
 
-        read1_doc_ref.relatesTo = [
+        doc_refs[1].relatesTo = [
             DocumentReferenceRelatesTo(
-                code=DocumentReferenceRelationship.APPENDS,
-                target=reference_for(read2_doc_ref),
+                code=DocumentReferenceRelationship.TRANSFORMS,
+                target=reference_for(doc_refs[0]),
             )
         ]
-
-        doc_refs.append(read2_doc_ref)
 
     return doc_refs
 
 
 @typing.no_type_check
-def map_entries_to_fhir_bundle(
-    entries: list[FastqListEntry],
-    ngis_participant_id: str,
-    ngis_referral_id: str,
-    ods_code: str,
-    api_base_url: str,
-    tumour_id: str | None = None,
-    headers: dict[str, str] | None = None,
-    dry_run: bool = False,
-) -> Bundle:
-    """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
-    patient_reference: Reference = Reference(
-        identifier=Identifier(
-            system="https://genomicsengland.co.uk/ngis-participant-id",
-            value=ngis_participant_id,
-        ),
-        type=Patient.__name__,
-    )
+def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
+    logging.info("Creating Specimen resource for germline blood sample")
 
-    referral_reference: Reference = Reference(
-        identifier=Identifier(
-            system="https://genomicsengland.co.uk/ngis-referral-id",
-            value=ngis_referral_id,
-        ),
-        type=ServiceRequest.__name__,
-    )
-
-    specimen: Specimen = Specimen(
+    return Specimen(
         id=create_uuid(),
-        identifier=[
-            Identifier(
-                system=f"https://{ods_code}.nhs.uk/lab-sample-id", value=entries[0].RGSM
-            )
-        ],
-        subject=patient_reference,
-        request=[referral_reference],
-        collection=SpecimenCollection(
-            collector=Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                )
-            )
-        ),
-    )
-
-    if tumour_id is None:
-        logging.info("Creating Specimen resource for germline blood sample")
-        specimen.extension = (
+        identifier=[client.config.sample_identifier],
+        subject=client.config.participant_reference,
+        request=[client.config.referral_reference],
+        extension=[
             Extension(
                 url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
                 valueCodeableConcept=CodeableConcept(
@@ -253,10 +138,9 @@ def map_entries_to_fhir_bundle(
                         )
                     ]
                 ),
-            ),
-        )
-
-        specimen.type = CodeableConcept(
+            )
+        ],
+        type=CodeableConcept(
             coding=[
                 Coding(
                     system="http://snomed.info/sct",
@@ -264,28 +148,80 @@ def map_entries_to_fhir_bundle(
                     display="Blood specimen with EDTA",
                 )
             ]
-        )
+        ),
+    )
 
-    else:
-        logging.info("Creating Specimen resource for tumour sample")
-        specimen.extension = (
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="solid-tumour",
-                            display="Solid Tumour",
-                        )
-                    ]
-                ),
+
+@typing.no_type_check
+def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
+    logging.info("Creating Specimen resource for tumour sample")
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[
+            client.config.sample_identifier,
+            client.config.tumour_identifier,
+        ],
+        subject=client.config.participant_reference,
+        request=[client.config.referral_reference],
+        extension=Extension(
+            url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+            valueCodeableConcept=CodeableConcept(
+                coding=[
+                    Coding(
+                        system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                        code="solid-tumour",
+                        display="Solid Tumour",
+                    )
+                ]
             ),
+        ),
+    )
+
+
+def create_specimen(client: cgpclient.client.CGPClient) -> Specimen:
+    if client.config.tumour_id is not None:
+        return create_tumour_sample(
+            client=client,
         )
 
-        specimen.identifier += [
-            Identifier(system=f"https://{ods_code}.nhs.uk/tumour-id", value=tumour_id)
-        ]
+    return create_germline_sample(
+        client=client,
+    )
+
+
+@typing.no_type_check
+def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
+    return Procedure(
+        id=create_uuid(),
+        identifier=[client.config.run_identifier],
+        code=CodeableConcept(
+            coding=[
+                Coding(
+                    code="461571000124105",
+                    system="http://snomed.info/sct",
+                    display="Whole genome sequencing",
+                )
+            ]
+        ),
+        subject=client.config.participant_reference,
+        performer=[ProcedurePerformer(actor=client.config.org_reference)],
+        basedOn=[client.config.referral_reference],
+        status=ProcedureStatus.COMPLETED,
+    )
+
+
+@typing.no_type_check
+def map_entries_to_bundle(
+    entries: list[FastqListEntry],
+    client: cgpclient.client.CGPClient,
+    run_info_file: Path | None = None,
+) -> Bundle:
+    """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
+
+    specimen: Specimen = create_specimen(client=client)
+
+    procedure: Procedure = create_procedure(client=client)
 
     document_references: list[DocumentReference] = []
 
@@ -293,11 +229,15 @@ def map_entries_to_fhir_bundle(
         document_references.extend(
             fastq_list_entry_to_document_references(
                 entry=entry,
-                specimen=specimen,
-                ods_code=ods_code,
-                api_base_url=api_base_url,
-                headers=headers,
-                dry_run=dry_run,
+                client=client,
+            )
+        )
+
+    if run_info_file is not None:
+        document_references.extend(
+            create_drs_document_references(
+                filenames=[run_info_file],
+                client=client,
             )
         )
 
@@ -305,22 +245,22 @@ def map_entries_to_fhir_bundle(
         id=create_uuid(),
         status=CompositionStatus.FINAL,
         type=CodeableConcept(
-            coding=[Coding(system="http://loinc.org", code="86206-0")]
+            coding=[
+                Coding(
+                    system="http://loinc.org",
+                    code="86206-0",
+                    display="Whole genome sequence analysis",
+                )
+            ]
         ),
         date=get_current_datetime(),
-        author=[
-            Reference(
-                identifier=Identifier(
-                    system="https://fhir.nhs.uk/Id/ods-organization-code",
-                    value=ods_code,
-                ),
-            )
-        ],
-        title="WGS FASTQ sample delivery",
+        author=[client.config.org_reference],
+        title="WGS sample run",
         section=[
             CompositionSection(title="sample", entry=[reference_for(specimen)]),
+            CompositionSection(title="run", entry=[reference_for(procedure)]),
             CompositionSection(
-                title="fastqs",
+                title="files",
                 entry=[
                     reference_for(document_reference)
                     for document_reference in document_references
@@ -329,42 +269,31 @@ def map_entries_to_fhir_bundle(
         ],
     )
 
-    return bundle_for([composition, specimen] + document_references)
+    return bundle_for([composition, specimen, procedure] + document_references)
 
 
-def upload_sample_from_fastq_list(
+def upload_dragen_run(
     fastq_list_csv: Path,
-    ngis_participant_id: str,
-    ngis_referral_id: str,
-    ods_code: str,
-    api_base_url: str,
-    tumour_id: str | None = None,
-    headers: dict[str, str] | None = None,
-    fastq_list_sample_id: str | None = None,
-    dry_run: bool = False,
+    client: cgpclient.client.CGPClient,
+    run_info_file: Path | None = None,
 ) -> None:
-    """Convert a FASTQ list CVS into DRS objects and FHIR resources, and upload
+    """Convert a FASTQ list CSV into DRS objects and FHIR resources, and upload
     the FASTQs and the DRS and FHIR resources to the relevant services
     """
     entries: list[FastqListEntry] = read_fastq_list(
-        fastq_list_csv=fastq_list_csv, fastq_list_sample_id=fastq_list_sample_id
+        fastq_list_csv=fastq_list_csv, sample_id=client.config.sample_id
     )
 
-    fhir_bundle: Bundle = map_entries_to_fhir_bundle(
+    if client.config.sample_id is None:
+        client.config.sample_id = entries[0].RGSM
+
+    bundle: Bundle = map_entries_to_bundle(
         entries=entries,
-        ngis_participant_id=ngis_participant_id,
-        ngis_referral_id=ngis_referral_id,
-        ods_code=ods_code,
-        tumour_id=tumour_id,
-        api_base_url=api_base_url,
-        headers=headers,
-        dry_run=dry_run,
+        run_info_file=run_info_file,
+        client=client,
     )
 
     post_fhir_resource(
-        resource=fhir_bundle,  # type: ignore
-        api_base_url=api_base_url,
-        ods_code=ods_code,
-        headers=headers,
-        dry_run=dry_run,
+        resource=bundle,  # type: ignore
+        client=client,
     )
