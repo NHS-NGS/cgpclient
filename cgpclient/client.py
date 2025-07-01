@@ -167,7 +167,7 @@ class CGPClient:
     def __init__(
         self,
         api_host: str,
-        api_key: str,
+        api_key: str | None = None,
         api_name: str | None = None,
         private_key_pem: Path | None = None,
         apim_kid: str | None = None,

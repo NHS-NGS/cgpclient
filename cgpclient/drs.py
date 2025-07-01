@@ -157,6 +157,7 @@ class DrsObject(BaseModel):
             output = Path(self.name)
         if output is None:
             raise CGPClientException("Need either an output path or a DRS object name")
+
         _stream_data_from_https_url(
             https_url=presigned_url,
             output=output,
@@ -229,7 +230,7 @@ def _resolve_drs_url_to_https(drs_url: str, client: cgpclient.client.CGPClient) 
         if client.override_api_base_url:
             drs_url = _override_api_base_url(url=drs_url, host=client.api_base_url)
 
-            return drs_url
+        return drs_url
 
     raise CGPClientException(f"Invalid DRS URL format {drs_url}")
 
@@ -286,13 +287,14 @@ def _stream_data_from_https_url(
                 out.write(chunk)
                 num_chunks += 1
         logging.info("Download complete in %i chunks", num_chunks)
-        if expected_hash is not None:
-            # check for object integrity
-            if md5sum(output) != expected_hash:
-                raise CGPClientException(
-                    f"Downloaded file hash does not match expected hash {expected_hash}"
-                )
-            logging.info("File hash successfully verified")
+
+    if expected_hash is not None:
+        # check for object integrity
+        if md5sum(output) != expected_hash:
+            raise CGPClientException(
+                f"Downloaded file hash does not match expected hash {expected_hash}"
+            )
+        logging.info("File hash successfully verified")
 
 
 def get_drs_object(

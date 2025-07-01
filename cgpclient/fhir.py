@@ -420,7 +420,7 @@ def add_workspace_meta_tag(
         if resource.meta.tag is None:
             resource.meta.tag = []
 
-        logging.info(
+        logging.debug(
             "Adding workspace ID %s to resource meta tags", client.config.workspace_id
         )
         resource.meta.tag.append(client.config.workspace_meta_tag)
@@ -497,7 +497,7 @@ def search_for_document_references(
     if query_params is None:
         # use the client config to define search parameters
         query_params: dict = {
-            "_count": "100",
+            "_count": str(MAX_SEARCH_RESULTS),
         }
 
         if client.config.file_id is not None:
@@ -550,7 +550,7 @@ def search_for_fhir_resource(
         logging.debug(response.json())
         bundle: Bundle = Bundle.parse_obj(response.json())
         if bundle.link and len(bundle.link) == 1 and bundle.link[0].relation == "next":
-            # TODO: need to override host
+            # TODO: need to override host and follow the next links
             url: str = bundle.link[0].url
             logging.info(
                 "More than %i results for search, implement paging!", MAX_SEARCH_RESULTS
@@ -585,7 +585,10 @@ def get_service_request(
     if len(bundle.entry) == 1:
         # pylint: disable=unsubscriptable-object
         return CGPServiceRequest.parse_obj(bundle.entry[0].resource.dict())
-    raise CGPClientException("Unexpected number of ServiceRequests found")
+    raise CGPClientException(
+        f"Expected a single ServiceRequest for referral_id {referral_id},"
+        f" got {len(bundle.entry)}"
+    )
 
 
 def get_patient(participant_id: str, client: cgpclient.client.CGPClient):
