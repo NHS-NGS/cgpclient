@@ -130,6 +130,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Configuration YAML file (default ~/.cgpclient/config.yaml)",
         default=Path.home() / ".cgpclient/config.yaml",
     )
+    parser.add_argument(
+        "-w",
+        "--workspace_id",
+        type=str,
+        help="FHIR server workspace ID",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -157,6 +163,7 @@ def main(cmdline_args: list[str]) -> None:
         participant_id=args.participant_id,
         file_id=args.file_id,
         ods_code=args.ods_code,
+        workspace_id=args.workspace_id,
     )
 
     client: CGPClient = CGPClient(

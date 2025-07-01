@@ -321,15 +321,15 @@ def post_drs_object(drs_object: DrsObject, client: cgpclient.client.CGPClient) -
     logging.info("Posting DRS object: %s", drs_object.id)
     logging.debug(drs_object.model_dump_json(exclude_defaults=True))
 
-    if client.dry_run:
-        logging.info("Dry run, so skipping posting DRS object")
-        return
-
     if client.output_dir is not None:
         output_file: Path = client.output_dir / Path("drs_objects.json")
         logging.info("Writing DRS object to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(drs_object.model_dump_json(), file=out)
+
+    if client.dry_run:
+        logging.info("Dry run, so skipping posting DRS object")
+        return
 
     response: requests.Response = requests.post(
         url=endpoint,

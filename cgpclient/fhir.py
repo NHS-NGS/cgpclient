@@ -16,6 +16,7 @@ import requests
 from fhir.resources.R4B import construct_fhir_element
 from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle, BundleEntry, BundleEntryRequest
+from fhir.resources.R4B.coding import Coding
 from fhir.resources.R4B.device import Device, DeviceDeviceName, DeviceVersion
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
@@ -24,6 +25,7 @@ from fhir.resources.R4B.documentreference import (
 )
 from fhir.resources.R4B.domainresource import DomainResource
 from fhir.resources.R4B.identifier import Identifier
+from fhir.resources.R4B.meta import Meta
 from fhir.resources.R4B.organization import Organization
 from fhir.resources.R4B.patient import Patient
 from fhir.resources.R4B.procedure import Procedure
@@ -34,6 +36,7 @@ from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 
 import cgpclient
+import cgpclient.client
 from cgpclient.drs import DrsObject
 from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.utils import (
@@ -44,6 +47,7 @@ from cgpclient.utils import (
 )
 
 MAX_SEARCH_RESULTS = 100
+MAX_UNSIGNED_INT = 2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
 
 
 class ProcedureStatus(StrEnum):
@@ -347,12 +351,25 @@ def document_reference_for_drs_object(
                     url=drs_object.self_uri,
                     contentType=drs_object.mime_type,
                     title=drs_object.name,
-                    size=drs_object.size,
+                    # in FHIR R4 size is an unsignedInt:
+                    # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
+                    size=min(drs_object.size, MAX_UNSIGNED_INT),
                     hash=drs_object.checksums[0].checksum,
                 )
             ),
         ],
         context=DocumentReferenceContext(related=client.config.related_references),
+        meta=Meta(
+            # as a work around to the size limit above, we include the real
+            # file size as a string here as a meta tag
+            tag=[
+                Coding(
+                    system="https://genomicsengland.co.uk/workaround-attachment-size",
+                    code=f"{drs_object.size}",
+                    display="attachment size in bytes",
+                )
+            ]
+        ),
     )
 
 
@@ -392,15 +409,37 @@ def upload_files(
     )
 
 
+def add_workspace_meta_tag(
+    resource: DomainResource, client: cgpclient.client.CGPClient
+) -> None:
+    """Add the workspace ID to the FHIR meta tags"""
+    if client.config.workspace_id is not None:
+        if resource.meta is None:
+            resource.meta = Meta()
+
+        if resource.meta.tag is None:
+            resource.meta.tag = []
+
+        logging.info(
+            "Adding workspace ID %s to resource meta tags", client.config.workspace_id
+        )
+        resource.meta.tag.append(client.config.workspace_meta_tag)
+
+
+def add_workspace_meta_tag_to_bundle(
+    bundle: Bundle, client: cgpclient.client.CGPClient
+) -> None:
+    for entry in bundle.entry:
+        add_workspace_meta_tag(resource=entry.resource, client=client)
+
+
 def post_fhir_resource(
     resource: DomainResource,
     client: cgpclient.client.CGPClient,
     params: dict[str, str] | None = None,
 ) -> None:
     """Post a FHIR resource to the FHIR server"""
-    url: str = (
-        f"{fhir_base_url(client.api_base_url)}/{resource.resource_type}/{resource.id}"
-    )
+    url: str = f"{fhir_base_url(client.api_base_url)}/{resource.resource_type}/"
 
     if resource.resource_type == Bundle.__name__ and resource.type in (
         BundleType.BATCH,
@@ -413,22 +452,22 @@ def post_fhir_resource(
             resource = add_provenance_for_bundle(
                 bundle=resource, org_reference=client.config.org_reference
             )
-
+        add_workspace_meta_tag_to_bundle(bundle=resource, client=client)
         logging.info("Posting bundle including %i entries", len(resource.entry))
 
-    logging.info("Posting resource to endpoint: %s", url)
-    logging.debug(resource.json(exclude_none=True))
+    add_workspace_meta_tag(resource=resource, client=client)
 
-    if client.dry_run:
-        logging.info("Dry run, so skipping posting resource")
-        return
+    logging.info("Posting resource to endpoint: %s", url)
 
     if client.output_dir is not None:
-        client.output_dir.mkdir(parents=True, exist_ok=True)
         output_file: Path = client.output_dir / Path("fhir_resources.json")
         logging.info("Writing FHIR resource to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(resource.json(exclude_none=True), file=out)
+
+    if client.dry_run:
+        logging.info("Dry run, so skipping posting resource")
+        return
 
     response: requests.Response = requests.post(
         url=url,
@@ -494,6 +533,9 @@ def search_for_fhir_resource(
     """Search for a FHIR resource using the query parameters"""
     url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
     query_params["_count"] = str(MAX_SEARCH_RESULTS)
+
+    if client.config.workspace_id is not None:
+        query_params["_tag"] = client.config.workspace_id
 
     logging.info("Requesting endpoint: %s", url)
     logging.info("Query parameters: %s", query_params)
@@ -573,6 +615,7 @@ class ClientConfig:
         sample_id: str | None = None,
         tumour_id: str | None = None,
         file_id: str | None = None,
+        workspace_id: str | None = None,
     ):
         self.participant_id = participant_id
         self.referral_id = referral_id
@@ -581,6 +624,15 @@ class ClientConfig:
         self.sample_id = sample_id
         self.tumour_id = tumour_id
         self.file_id = file_id
+        self.workspace_id = workspace_id
+
+    @property
+    def workspace_meta_tag(self) -> Coding:
+        return Coding(
+            system="https://genomicsengland.co.uk/workspace_id",
+            code=self.workspace_id,
+            display="workspace_id",
+        )
 
     @property
     def related_references(self) -> list[Reference]:

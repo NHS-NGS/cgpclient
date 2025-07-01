@@ -38,8 +38,6 @@ mimetypes.add_type("application/index", ext=".csi")
 mimetypes.add_type("application/index", ext=".crai")
 mimetypes.add_type("application/index", ext=".bai")
 
-MAX_UNSIGNED_INT = 2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
-
 
 class DrsUploadMethodType(StrEnum):  # type: ignore
     S3 = "s3"
@@ -230,7 +228,7 @@ def _create_upload_request_object(
             DrsUploadRequestObject(
                 name=filename.name,
                 checksums=[Checksum(type=ChecksumType.MD5, checksum=md5sum(filename))],
-                size=min(filename.stat().st_size, MAX_UNSIGNED_INT),
+                size=filename.stat().st_size,
                 mime_type=guess_mime_type(filename),
             )
         )

@@ -17,7 +17,7 @@ from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel
-from tabulate import tabulate
+from tabulate import tabulate  # type: ignore
 
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object
@@ -383,7 +383,7 @@ class CGPClient:
             force_overwrite=force_overwrite,
         )
 
-    def list_referrals(self) -> list[CGPReferral]:
+    def list_referrals(self) -> CGPReferrals:
         return []
 
     @typing.no_type_check

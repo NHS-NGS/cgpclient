@@ -139,6 +139,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Just create the DRS and FHIR resources, don't actually upload anything",
     )
+    parser.add_argument(
+        "-w",
+        "--workspace_id",
+        type=str,
+        help="FHIR server workspace ID",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -167,6 +173,7 @@ def main(cmdline_args: list[str]) -> None:
         run_id=args.run_id,
         sample_id=args.sample_id,
         tumour_id=args.tumour_id,
+        workspace_id=args.workspace_id,
     )
 
     client: CGPClient = CGPClient(
