@@ -61,12 +61,11 @@ extra_css:
 
 markdown_extensions:
   - attr_list
-  - pymdownx.superfences
-  # - pymdownx.superfences:
-  #     custom_fences:
-  #       - name: mermaid
-  #         class: mermaid
-  #         format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:mermaid2.fence_mermaid_custom
   - abbr
   - admonition
   - pymdownx.details
@@ -90,7 +89,7 @@ markdown_extensions:
 plugins:
   - search:
       lang: en
-  # - mermaid2:
+  - mermaid2
   - mkdocstrings:
       default_handler: python
 
