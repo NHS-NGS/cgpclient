@@ -38,6 +38,8 @@ from cgpclient.utils import (
     create_uuid,
 )
 
+log = logging.getLogger(__name__)
+
 
 @dataclass
 class CGPFile:
@@ -192,7 +194,7 @@ class CGPClient:
         if self.output_dir is not None:
             self.output_dir = self.output_dir / Path(create_uuid())
             self.output_dir.mkdir(parents=True, exist_ok=True)
-            logging.info("Created output directory: %s", self.output_dir)
+            log.info("Created output directory: %s", self.output_dir)
 
     @property
     def api_base_url(self) -> str:
@@ -218,7 +220,7 @@ class CGPClient:
 
         expiry_time: int = int(time()) + (5 * 60)  # 5 mins in the future
 
-        logging.debug(
+        log.debug(
             "Creating JWT for KID: %s and signing with private key: %s",
             self.apim_kid,
             self.private_key_pem,
@@ -240,7 +242,7 @@ class CGPClient:
     def request_access_token(self) -> NHSOAuthToken:
         """Fetch an OAuth token from the NHS OAuth server"""
         # following: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication # noqa: E501
-        logging.info("Requesting OAuth token from: %s", self.oauth_endpoint)
+        log.info("Requesting OAuth token from: %s", self.oauth_endpoint)
         response: requests.Response = requests.post(
             url=self.oauth_endpoint,
             headers={"content-type": "application/x-www-form-urlencoded"},
@@ -254,7 +256,7 @@ class CGPClient:
             timeout=REQUEST_TIMEOUT_SECS,
         )
         if response.ok:
-            logging.info("Got successful response from OAuth server")
+            log.info("Got successful response from OAuth server")
             return NHSOAuthToken.model_validate(response.json())
 
         raise CGPClientException(
@@ -269,7 +271,7 @@ class CGPClient:
             > int(self._oauth_token.issued_at) + int(self._oauth_token.expires_in)
         ):
             # we need to fetch a new token from the NHS
-            logging.info("Requesting new OAuth token")
+            log.info("Requesting new OAuth token")
             self._oauth_token = self.request_access_token()
 
         return self._oauth_token
@@ -277,7 +279,7 @@ class CGPClient:
     def get_access_token(self) -> str | None:
         """Get the current OAuth access token value"""
         if self._using_sandbox_env:
-            logging.info("No access token required in sandbox environment")
+            log.info("No access token required in sandbox environment")
             return None
 
         return self.get_oauth_token().access_token
@@ -287,28 +289,28 @@ class CGPClient:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
 
         if self._using_sandbox_env:
-            logging.debug("Skipping authentication for sandbox environment")
+            log.debug("Skipping authentication for sandbox environment")
             return {}
 
         if self.private_key_pem is not None:
             # use OAuth if we're given a private key
-            logging.debug("Using signed JWT authentication")
+            log.debug("Using signed JWT authentication")
             return {"Authorization": f"Bearer {self.get_access_token()}"}
 
         if self.api_key is not None:
             # use the supplied API key
-            logging.debug("Using API key authentication")
+            log.debug("Using API key authentication")
             if APIM_BASE_URL in self.api_host:
                 # use APIM header
-                logging.debug("Using APIM API key header")
+                log.debug("Using APIM API key header")
                 return {"apikey": self.api_key}
 
             # otherwise use standard header
-            logging.debug("Using standard API key header")
+            log.debug("Using standard API key header")
             return {"X-API-Key": self.api_key}
 
         # no auth by default
-        logging.debug("No API authentication")
+        log.debug("No API authentication")
         return {}
 
     def get_service_request(self, referral_id: str) -> CGPServiceRequest:
@@ -375,7 +377,7 @@ class CGPClient:
             else:
                 raise CGPClientException("Could not find matching file")
 
-        logging.debug(document_reference.json(exclude_none=True))
+        log.debug(document_reference.json(exclude_none=True))
 
         self.download_data_from_drs_document_reference(
             document_reference=document_reference,
@@ -397,13 +399,13 @@ class CGPClient:
         result: list[CGPFile] = []
 
         if bundle.entry:
-            logging.info("Found %i matching files in FHIR server", len(bundle.entry))
+            log.info("found %i matching files in FHIR server", len(bundle.entry))
             for entry in bundle.entry:
                 details: dict = {}
 
                 document_reference: DocumentReference = entry.resource
 
-                logging.debug(document_reference.json(exclude_none=True))
+                log.debug(document_reference.json(exclude_none=True))
 
                 details["last_updated"] = document_reference.meta.lastUpdated.strftime(
                     "%Y-%m-%dT%H:%M:%S"
@@ -449,7 +451,7 @@ class CGPClient:
                         and mime_type not in attachment.contentType
                     ):
                         # filter to specified MIME type
-                        logging.debug(
+                        log.debug(
                             "Skipping file which doesn't match MIME type %s, %s",
                             mime_type,
                             attachment.contentType,
@@ -474,10 +476,10 @@ class CGPClient:
                 try:
                     result.append(CGPFile(**details))
                 except TypeError as e:
-                    logging.debug(document_reference.json(exclude_none=True))
+                    log.debug(document_reference.json(exclude_none=True))
                     raise CGPClientException("Invalid DocumentReference") from e
 
-        logging.info("Found %i matching files after all filters", len(result))
+        log.info("Found %i matching files after all filters", len(result))
         return CGPFiles(files=result)
 
     def upload_files_with_drs(

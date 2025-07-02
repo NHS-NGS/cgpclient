@@ -438,7 +438,7 @@ def test_get_url(document_reference: dict):
 
 
 @patch("requests.get")
-def test_get_object_from_url(
+def test_get_object_from_https_url(
     mock_server: MagicMock, drs_object: dict, client: CGPClient
 ):
     class MockedResponse:
@@ -450,8 +450,14 @@ def test_get_object_from_url(
 
     mock_server.return_value = MockedResponse()
 
+    with pytest.raises(CGPClientException):
+        _get_drs_object_from_https_url(https_url="foo", client=client)
+
+    with pytest.raises(CGPClientException):
+        _get_drs_object_from_https_url(https_url="drs://foo", client=client)
+
     drs_response: DrsObject = _get_drs_object_from_https_url(
-        https_url="foo", client=client
+        https_url="https://foo", client=client
     )
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
@@ -459,12 +465,29 @@ def test_get_object_from_url(
 
 @patch("cgpclient.drs._get_drs_object_from_https_url")
 def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPClient):
+    md5_hash: str = "MD5HASH"
+    drs_object["checksums"][0]["checksum"] = md5_hash
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
+
+    with pytest.raises(CGPClientException):
+        get_drs_object(drs_url=drs_object["id"], client=client)
+
+    with pytest.raises(CGPClientException):
+        get_drs_object(
+            drs_url=drs_object["self_uri"], client=client, expected_hash="foo"
+        )
+
+    # test we don't raise with no expected hash
+    try:
+        get_drs_object(drs_url=drs_object["self_uri"], client=client)
+    except CGPClientException:
+        assert False
+
     drs_response: DrsObject = get_drs_object(
-        drs_url=drs_object["self_uri"], client=client
+        drs_url=drs_object["self_uri"], client=client, expected_hash=md5_hash
     )
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
-    mock_get_object.assert_called_once()
+    mock_get_object.assert_called()
 
 
 def test_map_drs_to_https_url() -> None:

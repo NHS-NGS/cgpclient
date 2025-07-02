@@ -16,7 +16,9 @@ import requests
 from fhir.resources.R4B import construct_fhir_element
 from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle, BundleEntry, BundleEntryRequest
+from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
+from fhir.resources.R4B.composition import Composition, CompositionSection
 from fhir.resources.R4B.device import Device, DeviceDeviceName, DeviceVersion
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
@@ -24,11 +26,12 @@ from fhir.resources.R4B.documentreference import (
     DocumentReferenceContext,
 )
 from fhir.resources.R4B.domainresource import DomainResource
+from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.identifier import Identifier
 from fhir.resources.R4B.meta import Meta
 from fhir.resources.R4B.organization import Organization
 from fhir.resources.R4B.patient import Patient
-from fhir.resources.R4B.procedure import Procedure
+from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
 from fhir.resources.R4B.provenance import Provenance, ProvenanceAgent
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.relatedperson import RelatedPerson
@@ -45,6 +48,8 @@ from cgpclient.utils import (
     create_uuid,
     get_current_datetime,
 )
+
+log = logging.getLogger(__name__)
 
 MAX_SEARCH_RESULTS = 100
 MAX_UNSIGNED_INT = 2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
@@ -244,6 +249,11 @@ def identifier_search_string(identifier: Identifier) -> str:
 
 
 def provenance_for(resource: DomainResource, org_reference: Reference) -> Provenance:
+    log.info(
+        "Creating Provenance resource for Organization %s for FHIR resource %s",
+        org_reference.identifier.value,
+        f"{resource.resource_type}/{resource.id}",
+    )
     return Provenance(
         id=create_uuid(),
         target=[reference_for(resource)],
@@ -275,7 +285,7 @@ def get_resource(
         raise CGPClientException("Need explicit resource type")
 
     url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}/{resource_id}"
-    logging.info("Requesting endpoint: %s", url)
+    log.info("Requesting endpoint: %s", url)
     response: requests.Response = requests.get(
         url=url,
         headers=client.headers,
@@ -338,6 +348,7 @@ def document_reference_for_drs_object(
     drs_object: DrsObject, client: cgpclient.client.CGPClient
 ) -> DocumentReference:
     """Create a DocumentReference resource corresponding to a DRS object"""
+    log.info("Creating DocumentReference resource for file: %s", drs_object.name)
     return DocumentReference(
         id=create_uuid(),
         identifier=[client.config.file_identifier(drs_object.name)],
@@ -420,7 +431,7 @@ def add_workspace_meta_tag(
         if resource.meta.tag is None:
             resource.meta.tag = []
 
-        logging.debug(
+        log.debug(
             "Adding workspace ID %s to resource meta tags", client.config.workspace_id
         )
         resource.meta.tag.append(client.config.workspace_meta_tag)
@@ -446,27 +457,27 @@ def post_fhir_resource(
         BundleType.TRANSACTION,
     ):
         # these bundle types are posted to the root of the FHIR server
-        logging.info("Posting bundle to the root FHIR endpoint")
+        log.info("Posting %s bundle to the root FHIR endpoint", resource.type)
         url = f"{fhir_base_url(client.api_base_url)}/"
         if client.config.org_reference is not None:
             resource = add_provenance_for_bundle(
                 bundle=resource, org_reference=client.config.org_reference
             )
         add_workspace_meta_tag_to_bundle(bundle=resource, client=client)
-        logging.info("Posting bundle including %i entries", len(resource.entry))
+        log.info("Bundle includes %i entries", len(resource.entry))
 
     add_workspace_meta_tag(resource=resource, client=client)
 
-    logging.info("Posting resource to endpoint: %s", url)
+    log.info("Posting FHIR resource to endpoint: %s", url)
 
     if client.output_dir is not None:
         output_file: Path = client.output_dir / Path("fhir_resources.json")
-        logging.info("Writing FHIR resource to %s", output_file)
+        log.info("Writing FHIR resource to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(resource.json(exclude_none=True), file=out)
 
     if client.dry_run:
-        logging.info("Dry run, so skipping posting resource")
+        log.info("Dry run, so skipping posting resource")
         return
 
     response: requests.Response = requests.post(
@@ -477,9 +488,9 @@ def post_fhir_resource(
         timeout=REQUEST_TIMEOUT_SECS,
     )
     if response.ok:
-        logging.info("Successfully posted FHIR resource")
+        log.info("Successfully posted FHIR resource")
     else:
-        logging.error(
+        log.error(
             "Failed to post resource to: %s status: %i response: %s",
             url,
             response.status_code,
@@ -535,10 +546,10 @@ def search_for_fhir_resource(
     query_params["_count"] = str(MAX_SEARCH_RESULTS)
 
     if client.config.workspace_id is not None:
-        query_params["_tag"] = client.config.workspace_id
+        query_params["_tag"] = client.config.workspace_identifier_string
 
-    logging.info("Requesting endpoint: %s", url)
-    logging.info("Query parameters: %s", query_params)
+    log.info("Requesting endpoint: %s", url)
+    log.info("Query parameters: %s", query_params)
 
     response: requests.Response = requests.get(
         url=url,
@@ -547,17 +558,17 @@ def search_for_fhir_resource(
         timeout=REQUEST_TIMEOUT_SECS,
     )
     if response.ok or response.status_code:
-        logging.debug(response.json())
+        log.debug(response.json())
         bundle: Bundle = Bundle.parse_obj(response.json())
         if bundle.link and len(bundle.link) == 1 and bundle.link[0].relation == "next":
             # TODO: need to override host and follow the next links
             url: str = bundle.link[0].url
-            logging.info(
+            log.info(
                 "More than %i results for search, implement paging!", MAX_SEARCH_RESULTS
             )
         return bundle
 
-    logging.error(
+    log.error(
         "Failed to fetch from endpoint: %s status: %i response: %s",
         url,
         response.status_code,
@@ -608,6 +619,146 @@ def get_patient(participant_id: str, client: cgpclient.client.CGPClient):
     raise CGPClientException("Unexpected number of Patients found")
 
 
+@typing.no_type_check
+def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
+    log.info(
+        "Creating Specimen resource for sample: %s, type: germline",
+        client.config.sample_id,
+    )
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[client.config.sample_identifier],
+        subject=client.config.participant_reference,
+        request=[client.config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="germline",
+                            display="Germline",
+                        )
+                    ]
+                ),
+            )
+        ],
+        type=CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://snomed.info/sct",
+                    code="445295009",
+                    display="Blood specimen with EDTA",
+                )
+            ]
+        ),
+    )
+
+
+@typing.no_type_check
+def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
+    log.info(
+        "Creating Specimen resource for sample: %s, type: tumour",
+        client.config.sample_id,
+    )
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[
+            client.config.sample_identifier,
+            client.config.tumour_identifier,
+        ],
+        subject=client.config.participant_reference,
+        request=[client.config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="solid-tumour",
+                            display="Solid Tumour",
+                        )
+                    ]
+                ),
+            )
+        ],
+    )
+
+
+def create_specimen(client: cgpclient.client.CGPClient) -> Specimen:
+    if client.config.tumour_id is not None:
+        return create_tumour_sample(
+            client=client,
+        )
+
+    return create_germline_sample(
+        client=client,
+    )
+
+
+@typing.no_type_check
+def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
+    log.info("Creating Procedure resource for run: %s", client.config.run_id)
+    return Procedure(
+        id=create_uuid(),
+        identifier=[client.config.run_identifier],
+        code=CodeableConcept(
+            coding=[
+                Coding(
+                    code="461571000124105",
+                    system="http://snomed.info/sct",
+                    display="Whole genome sequencing",
+                )
+            ]
+        ),
+        subject=client.config.participant_reference,
+        performer=[ProcedurePerformer(actor=client.config.org_reference)],
+        basedOn=[client.config.referral_reference],
+        status=ProcedureStatus.COMPLETED,
+    )
+
+
+@typing.no_type_check
+def create_composition(
+    specimen: Specimen,
+    procedure: Procedure,
+    document_references: list[DocumentReference],
+    client: cgpclient.client.CGPClient,
+) -> Composition:
+    log.info("Creating Composition resource for delivery")
+    return Composition(
+        id=create_uuid(),
+        status=CompositionStatus.FINAL,
+        type=CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://loinc.org",
+                    code="86206-0",
+                    display="Whole genome sequence analysis",
+                )
+            ]
+        ),
+        date=get_current_datetime(),
+        author=[client.config.org_reference],
+        title="WGS sample run",
+        section=[
+            CompositionSection(title="sample", entry=[reference_for(specimen)]),
+            CompositionSection(title="run", entry=[reference_for(procedure)]),
+            CompositionSection(
+                title="files",
+                entry=[
+                    reference_for(document_reference)
+                    for document_reference in document_references
+                ],
+            ),
+        ],
+    )
+
+
 class ClientConfig:
     def __init__(
         self,
@@ -636,6 +787,10 @@ class ClientConfig:
             code=self.workspace_id,
             display="workspace_id",
         )
+
+    @property
+    def workspace_identifier_string(self) -> str:
+        return f"{self.workspace_meta_tag.system}|{self.workspace_id}"
 
     @property
     def related_references(self) -> list[Reference]:
