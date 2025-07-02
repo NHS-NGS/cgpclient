@@ -160,10 +160,10 @@ class CGPServiceRequest(ServiceRequest):
         """Search the FHIR server for the roles of each participant in the pedigree"""
         # pylint: disable=no-member
         proband_id: str = self.subject.reference
-        bundle: Bundle = search_for_fhir_resource(
+        service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+        bundle: Bundle = service.search_for_fhir_resource(
             resource_type=RelatedPerson.get_resource_type(),
             query_params={"patient": proband_id},
-            client=client,
         )
         roles: dict[str, str] = {self.subject.identifier.value: "proband"}
         if bundle.entry is not None:
@@ -187,10 +187,10 @@ class CGPServiceRequest(ServiceRequest):
         self, client: cgpclient.client.CGPClient
     ) -> list[CGPDocumentReference]:
         """Fetch associated DocumentReference resources from the FHIR server"""
-        bundle: Bundle = search_for_fhir_resource(
+        service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+        bundle: Bundle = service.search_for_fhir_resource(
             resource_type=DocumentReference.get_resource_type(),
             query_params={"related:identifier": self.referral_id, "_count": 100},
-            client=client,
         )
 
         doc_refs: list[CGPDocumentReference] = []
@@ -206,6 +206,153 @@ CGPClientDevice: Device = Device(
     version=[DeviceVersion(value=cgpclient.__version__)],
     deviceName=[DeviceDeviceName(name="cgpclient", type="manufacturer-name")],
 )
+
+
+class CGPFHIRService:
+    """Service class for FHIR operations, encapsulating client and config"""
+
+    def __init__(self, api_base_url: str, headers: dict, config: FHIRConfig):
+        self.api_base_url = api_base_url
+        self.headers = headers
+        self.config = config
+
+    @property
+    def base_url(self) -> str:
+        return fhir_base_url(self.api_base_url)
+
+    def get_resource(
+        self,
+        resource_id: str,
+        resource_type: str | None = None,
+        params: dict[str, str] | None = None,
+    ) -> DomainResource:
+        """Fetch a FHIR resource from the FHIR server"""
+        if resource_type is None and "/" in resource_id:
+            resource_type, resource_id = resource_id.split("/")
+        else:
+            raise CGPClientException("Need explicit resource type")
+
+        url = f"{self.base_url}/{resource_type}/{resource_id}"
+        logging.info("Requesting endpoint: %s", url)
+        response = requests.get(
+            url=url,
+            headers=self.headers,
+            params=params,
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            return construct_fhir_element(resource_type, response.json())
+
+        raise CGPClientException(
+            f"Failed to fetch from endpoint: {url} "
+            f"status: {response.status_code} response: {response.text}"
+        )
+
+    def search_for_fhir_resource(
+        self,
+        resource_type: str,
+        query_params: dict[str, str],
+    ) -> Bundle:
+        """Search for a FHIR resource using the query parameters"""
+        url = f"{self.base_url}/{resource_type}"
+        query_params["_count"] = str(MAX_SEARCH_RESULTS)
+
+        if self.config.workspace_id is not None:
+            query_params["_tag"] = self.config.workspace_id
+
+        logging.info("Requesting endpoint: %s", url)
+        logging.info("Query parameters: %s", query_params)
+
+        response = requests.get(
+            url=url,
+            headers=self.headers,
+            params=query_params,
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            logging.debug(response.json())
+            bundle = Bundle.parse_obj(response.json())
+            if (
+                bundle.link
+                and len(bundle.link) == 1
+                and bundle.link[0].relation == "next"
+            ):
+                url = bundle.link[0].url
+                logging.info(
+                    "More than %i results for search, implement paging!",
+                    MAX_SEARCH_RESULTS,
+                )
+            return bundle
+
+        logging.error(
+            "Failed to fetch from endpoint: %s status: %i response: %s",
+            url,
+            response.status_code,
+            response.text,
+        )
+        raise CGPClientException(
+            f"Error searching for resource, got status code: {response.status_code}"
+        )
+
+    def search_for_document_references(
+        self, query_params: dict[str, str] | None = None
+    ) -> Bundle:
+        if query_params is None:
+            query_params = {"_count": str(MAX_SEARCH_RESULTS)}
+
+            if self.config.file_id is not None:
+                query_params["identifier"] = identifier_search_string(
+                    self.config.file_identifier()
+                )
+
+            if self.config.related_query_string is not None:
+                query_params["related:identifier"] = self.config.related_query_string
+
+            if self.config.participant_id is not None:
+                query_params["subject:identifier"] = identifier_search_string(
+                    self.config.participant_identifier
+                )
+
+            if self.config.ods_code is not None:
+                query_params["author:identifier"] = identifier_search_string(
+                    self.config.org_identifier
+                )
+
+        return self.search_for_fhir_resource(
+            resource_type=DocumentReference.__name__,
+            query_params=query_params,
+        )
+
+    def get_service_request(self, referral_id: str) -> CGPServiceRequest:
+        """Search for a ServiceRequest resource corresponding to an NGIS referral ID"""
+        bundle = self.search_for_fhir_resource(
+            resource_type=ServiceRequest.get_resource_type(),
+            query_params={"identifier": referral_id},
+        )
+        if bundle.entry is None:
+            raise CGPClientException(
+                f"Didn't find a ServiceRequest for NGIS referral ID: {referral_id}"
+            )
+        if len(bundle.entry) == 1:
+            return CGPServiceRequest.parse_obj(bundle.entry[0].resource.dict())
+        raise CGPClientException(
+            f"Expected a single ServiceRequest for referral_id {referral_id}, "
+            f"got {len(bundle.entry)}"
+        )
+
+    def get_patient(self, participant_id: str) -> Patient:
+        """Search for a Patient resource corresponding to an NGIS participant ID"""
+        bundle = self.search_for_fhir_resource(
+            resource_type=Patient.get_resource_type(),
+            query_params={"identifier": participant_id},
+        )
+        if bundle.entry is None:
+            raise CGPClientException(
+                f"Didn't find a Patient for NGIS participant ID: {participant_id}"
+            )
+        if len(bundle.entry) == 1:
+            return Patient.parse_obj(bundle.entry[0].resource.dict())
+        raise CGPClientException("Unexpected number of Patients found")
 
 
 def create_resource_from_dict(data: dict) -> DomainResource:
@@ -260,38 +407,6 @@ def provenance_for(resource: DomainResource, org_reference: Reference) -> Proven
 def fhir_base_url(api_base_url: str) -> str:
     """Return the base URL for the FHIR server"""
     return f"https://{api_base_url}/FHIR/R4"
-
-
-def get_resource(
-    resource_id: str,
-    client: cgpclient.client.CGPClient,
-    resource_type: str | None = None,
-    params: dict[str, str] | None = None,
-) -> DomainResource:
-    """Fetch a FHIR resource from the FHIR server"""
-    if resource_type is None and "/" in resource_id:
-        resource_type, resource_id = resource_id.split("/")
-    else:
-        raise CGPClientException("Need explicit resource type")
-
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}/{resource_id}"
-    logging.info("Requesting endpoint: %s", url)
-    response: requests.Response = requests.get(
-        url=url,
-        headers=client.headers,
-        params=params,
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok:
-        return construct_fhir_element(resource_type, response.json())
-
-    raise CGPClientException(
-        (
-            f"Failed to fetch from endpoint: {url} "
-            f"status: {response.status_code} "
-            f"response: {response.text}"
-        )
-    )
 
 
 def bundle_entry_for(
@@ -421,7 +536,8 @@ def add_workspace_meta_tag(
             resource.meta.tag = []
 
         logging.debug(
-            "Adding workspace ID %s to resource meta tags", client.fhir_config.workspace_id
+            "Adding workspace ID %s to resource meta tags",
+            client.fhir_config.workspace_id,
         )
         resource.meta.tag.append(client.fhir_config.workspace_meta_tag)
 
@@ -489,123 +605,6 @@ def post_fhir_resource(
         raise CGPClientException(
             f"Error posting resource, got status code: {response.status_code}"
         )
-
-
-def search_for_document_references(
-    client: cgpclient.client.CGPClient, query_params: dict[str, str] | None = None
-) -> Bundle:
-    if query_params is None:
-        # use the client config to define search parameters
-        query_params: dict = {
-            "_count": str(MAX_SEARCH_RESULTS),
-        }
-
-        if client.fhir_config.file_id is not None:
-            query_params["identifier"] = identifier_search_string(
-                client.fhir_config.file_identifier()
-            )
-
-        if client.fhir_config.related_query_string is not None:
-            query_params["related:identifier"] = client.fhir_config.related_query_string
-
-        if client.fhir_config.participant_id is not None:
-            query_params["subject:identifier"] = identifier_search_string(
-                client.fhir_config.participant_identifier
-            )
-
-        if client.fhir_config.ods_code is not None:
-            query_params["author:identifier"] = identifier_search_string(
-                client.fhir_config.org_identifier
-            )
-
-    return search_for_fhir_resource(
-        resource_type=DocumentReference.__name__,
-        query_params=query_params,
-        client=client,
-    )
-
-
-def search_for_fhir_resource(
-    resource_type: str,
-    query_params: dict[str, str],
-    client: cgpclient.client.CGPClient,
-) -> Bundle:
-    """Search for a FHIR resource using the query parameters"""
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
-    query_params["_count"] = str(MAX_SEARCH_RESULTS)
-
-    if client.fhir_config.workspace_id is not None:
-        query_params["_tag"] = client.fhir_config.workspace_id
-
-    logging.info("Requesting endpoint: %s", url)
-    logging.info("Query parameters: %s", query_params)
-
-    response: requests.Response = requests.get(
-        url=url,
-        headers=client.headers,
-        params=query_params,
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok or response.status_code:
-        logging.debug(response.json())
-        bundle: Bundle = Bundle.parse_obj(response.json())
-        if bundle.link and len(bundle.link) == 1 and bundle.link[0].relation == "next":
-            # TODO: need to override host and follow the next links
-            url: str = bundle.link[0].url
-            logging.info(
-                "More than %i results for search, implement paging!", MAX_SEARCH_RESULTS
-            )
-        return bundle
-
-    logging.error(
-        "Failed to fetch from endpoint: %s status: %i response: %s",
-        url,
-        response.status_code,
-        response.text,
-    )
-
-    raise CGPClientException(
-        f"Error searching for resource, got status code: {response.status_code}"
-    )
-
-
-def get_service_request(
-    referral_id: str, client: cgpclient.client.CGPClient
-) -> CGPServiceRequest:
-    """Search for a ServiceRequest resource corresponding to an NGIS referral ID"""
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=ServiceRequest.get_resource_type(),
-        query_params={"identifier": referral_id},
-        client=client,
-    )
-    if bundle.entry is None:
-        raise CGPClientException(
-            f"Didn't find a ServiceRequest for NGIS referral ID: {referral_id}"
-        )
-    if len(bundle.entry) == 1:
-        # pylint: disable=unsubscriptable-object
-        return CGPServiceRequest.parse_obj(bundle.entry[0].resource.dict())
-    raise CGPClientException(
-        f"Expected a single ServiceRequest for referral_id {referral_id},"
-        f" got {len(bundle.entry)}"
-    )
-
-
-def get_patient(participant_id: str, client: cgpclient.client.CGPClient):
-    """Search for a Patient resource corresponding to an NGIS participant ID"""
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=Patient.get_resource_type(),
-        query_params={"identifier": participant_id},
-        client=client,
-    )
-    if bundle.entry is None:
-        raise CGPClientException(
-            f"Didn't find a Patient for NGIS participant ID: {participant_id}"
-        )
-    if len(bundle.entry) == 1:
-        # pylint: disable=unsubscriptable-object
-        return Patient.parse_obj(bundle.entry[0].resource.dict())
-    raise CGPClientException("Unexpected number of Patients found")
 
 
 class FHIRConfig:

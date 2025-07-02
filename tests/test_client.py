@@ -5,6 +5,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
 from cgpclient.auth import NHSOAuthToken
@@ -30,7 +31,7 @@ from cgpclient.drsupload import (
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
     CGPServiceRequest,
-    get_service_request,
+    CGPFHIRService,
 )
 from cgpclient.utils import create_uuid
 
@@ -401,9 +402,8 @@ def test_get_service_request(
 
     mock_server.return_value = MockedResponse()
 
-    service_request: ServiceRequest = get_service_request(
-        referral_id="1234", client=client
-    )
+    service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+    service_request: ServiceRequest = service.get_service_request("1234")
 
     assert service_request == sr_bundle["entry"][0]["resource"]
 
@@ -425,8 +425,11 @@ def test_get_document_references(
     mock_server.return_value = MockedResponse()
 
     request: CGPServiceRequest = CGPServiceRequest.parse_obj(service_request)
-
-    doc_refs: list[CGPDocumentReference] = request.document_references(client=client)
+    service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+    
+    # Mock the search method since document_references uses it
+    with patch.object(service, 'search_for_fhir_resource', return_value=Bundle.parse_obj(doc_ref_bundle)):
+        doc_refs: list[CGPDocumentReference] = request.document_references(client=client)
 
     assert len(doc_refs) == 1
     assert doc_refs[0] == CGPDocumentReference.parse_obj(

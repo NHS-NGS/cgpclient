@@ -19,12 +19,9 @@ from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object
 from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.fhir import (  # type: ignore
+    CGPFHIRService,
     CGPServiceRequest,
     FHIRConfig,
-    get_patient,
-    get_resource,
-    get_service_request,
-    search_for_document_references,
     upload_files,
 )
 from cgpclient.utils import CGPClientException, create_uuid
@@ -181,6 +178,13 @@ class CGPClient:
             self.output_dir.mkdir(parents=True, exist_ok=True)
             logging.info("Created output directory: %s", self.output_dir)
 
+        # Initialize a fhir service
+        self.fhir_service = CGPFHIRService(
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+            config=self.fhir_config,
+        )
+
     @property
     def api_base_url(self) -> str:
         """Return the base URL for the overall API"""
@@ -196,11 +200,11 @@ class CGPClient:
 
     def get_service_request(self, referral_id: str) -> CGPServiceRequest:
         """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
-        return get_service_request(referral_id=referral_id, client=self)
+        return self.fhir_service.get_service_request(referral_id=referral_id)
 
     def get_patient(self, participant_id: str) -> Patient:
         """Fetch a FHIR Patient resource for the given NGIS participant ID"""
-        return get_patient(participant_id=participant_id, client=self)
+        return self.fhir_service.get_patient(participant_id=participant_id)
 
     def download_data_from_drs_document_reference(
         self,
@@ -239,21 +243,18 @@ class CGPClient:
 
         if document_reference_id is not None:
             # just use the given DocRef ID
-            document_reference = get_resource(
-                resource_id=document_reference_id,
-                client=self,
+            document_reference = self.fhir_serviceget_resource(
+                resource_id=document_reference_id
             )
         else:
             # search for a matching file
-            bundle: Bundle = search_for_document_references(
-                client=self,
-            )
+            bundle: Bundle = self.fhir_service.search_for_document_references()
             if bundle.entry:
                 if len(bundle.entry) == 1:
                     document_reference = bundle.entry[0].resource
                 else:
                     raise CGPClientException(
-                        f"Found {len(bundle.entry)} matching files, please refine search"
+                        f"Found {len(bundle.entry)} matching files,  refine search"
                     )
             else:
                 raise CGPClientException("Could not find matching file")
@@ -273,9 +274,7 @@ class CGPClient:
     def list_files(
         self, include_drs_access_urls: bool = False, mime_type: str | None = None
     ) -> CGPFiles:
-        bundle: Bundle = search_for_document_references(
-            client=self,
-        )
+        bundle: Bundle = self.fhir_service.search_for_document_references()
 
         result: list[CGPFile] = []
 
