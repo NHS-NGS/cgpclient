@@ -340,11 +340,11 @@ def document_reference_for_drs_object(
     """Create a DocumentReference resource corresponding to a DRS object"""
     return DocumentReference(
         id=create_uuid(),
-        identifier=[client.config.file_identifier(drs_object.name)],
+        identifier=[client.fhir_config.file_identifier(drs_object.name)],
         status=DocumentReferenceStatus.CURRENT,
         docStatus=DocumentReferenceDocStatus.FINAL,
-        author=[client.config.org_reference],
-        subject=client.config.participant_reference,
+        author=[client.fhir_config.org_reference],
+        subject=client.fhir_config.participant_reference,
         content=[
             DocumentReferenceContent(
                 attachment=Attachment(
@@ -358,7 +358,7 @@ def document_reference_for_drs_object(
                 )
             ),
         ],
-        context=DocumentReferenceContext(related=client.config.related_references),
+        context=DocumentReferenceContext(related=client.fhir_config.related_references),
         meta=Meta(
             # as a work around to the size limit above, we include the real
             # file size as a string here as a meta tag
@@ -413,7 +413,7 @@ def add_workspace_meta_tag(
     resource: DomainResource, client: cgpclient.client.CGPClient
 ) -> None:
     """Add the workspace ID to the FHIR meta tags"""
-    if client.config.workspace_id is not None:
+    if client.fhir_config.workspace_id is not None:
         if resource.meta is None:
             resource.meta = Meta()
 
@@ -421,9 +421,9 @@ def add_workspace_meta_tag(
             resource.meta.tag = []
 
         logging.debug(
-            "Adding workspace ID %s to resource meta tags", client.config.workspace_id
+            "Adding workspace ID %s to resource meta tags", client.fhir_config.workspace_id
         )
-        resource.meta.tag.append(client.config.workspace_meta_tag)
+        resource.meta.tag.append(client.fhir_config.workspace_meta_tag)
 
 
 def add_workspace_meta_tag_to_bundle(
@@ -448,9 +448,9 @@ def post_fhir_resource(
         # these bundle types are posted to the root of the FHIR server
         logging.info("Posting bundle to the root FHIR endpoint")
         url = f"{fhir_base_url(client.api_base_url)}/"
-        if client.config.org_reference is not None:
+        if client.fhir_config.org_reference is not None:
             resource = add_provenance_for_bundle(
-                bundle=resource, org_reference=client.config.org_reference
+                bundle=resource, org_reference=client.fhir_config.org_reference
             )
         add_workspace_meta_tag_to_bundle(bundle=resource, client=client)
         logging.info("Posting bundle including %i entries", len(resource.entry))
@@ -500,22 +500,22 @@ def search_for_document_references(
             "_count": str(MAX_SEARCH_RESULTS),
         }
 
-        if client.config.file_id is not None:
+        if client.fhir_config.file_id is not None:
             query_params["identifier"] = identifier_search_string(
-                client.config.file_identifier()
+                client.fhir_config.file_identifier()
             )
 
-        if client.config.related_query_string is not None:
-            query_params["related:identifier"] = client.config.related_query_string
+        if client.fhir_config.related_query_string is not None:
+            query_params["related:identifier"] = client.fhir_config.related_query_string
 
-        if client.config.participant_id is not None:
+        if client.fhir_config.participant_id is not None:
             query_params["subject:identifier"] = identifier_search_string(
-                client.config.participant_identifier
+                client.fhir_config.participant_identifier
             )
 
-        if client.config.ods_code is not None:
+        if client.fhir_config.ods_code is not None:
             query_params["author:identifier"] = identifier_search_string(
-                client.config.org_identifier
+                client.fhir_config.org_identifier
             )
 
     return search_for_fhir_resource(
@@ -534,8 +534,8 @@ def search_for_fhir_resource(
     url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
     query_params["_count"] = str(MAX_SEARCH_RESULTS)
 
-    if client.config.workspace_id is not None:
-        query_params["_tag"] = client.config.workspace_id
+    if client.fhir_config.workspace_id is not None:
+        query_params["_tag"] = client.fhir_config.workspace_id
 
     logging.info("Requesting endpoint: %s", url)
     logging.info("Query parameters: %s", query_params)
@@ -608,7 +608,7 @@ def get_patient(participant_id: str, client: cgpclient.client.CGPClient):
     raise CGPClientException("Unexpected number of Patients found")
 
 
-class ClientConfig:
+class FHIRConfig:
     def __init__(
         self,
         participant_id: str | None = None,

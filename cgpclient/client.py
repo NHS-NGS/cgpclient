@@ -20,7 +20,7 @@ from cgpclient.drs import DrsObject, get_drs_object
 from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.fhir import (  # type: ignore
     CGPServiceRequest,
-    ClientConfig,
+    FHIRConfig,
     get_patient,
     get_resource,
     get_service_request,
@@ -159,14 +159,14 @@ class CGPClient:
         override_api_base_url: bool = False,
         dry_run: bool = False,
         output_dir: Path | None = None,
-        config: ClientConfig | None = None,
+        fhir_config: FHIRConfig | None = None,
     ):
         self.api_host = api_host
         self.api_name = api_name
         self.override_api_base_url = override_api_base_url
         self.dry_run = dry_run
         self.output_dir = output_dir
-        self.config = ClientConfig() if config is None else config
+        self.fhir_config = FHIRConfig() if fhir_config is None else fhir_config
 
         # Use provided auth provider or create one from legacy parameters
         self.auth_provider = auth_provider or create_auth_provider(
