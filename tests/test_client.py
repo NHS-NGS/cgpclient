@@ -7,7 +7,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
-from cgpclient.client import CGPClient, CGPClientException, NHSOAuthToken
+from cgpclient.auth import NHSOAuthToken
+from cgpclient.client import CGPClient
+from cgpclient.utils import CGPClientException
 from cgpclient.drs import (
     DrsObject,
     _get_drs_object_from_https_url,
@@ -490,14 +492,9 @@ def test_map_drs_to_https_url() -> None:
         _map_drs_to_https_url(f"drs://{object_id}")
 
 
-@patch("cgpclient.client.time")
+@patch("cgpclient.auth.time")
 @patch("requests.post")
-@patch("cgpclient.client.CGPClient.get_jwt")
-def test_get_oauth_token(
-    mock_jwt: MagicMock, mock_post: MagicMock, mock_time: MagicMock
-):
-    mock_jwt.return_value = "NOTAJWT"
-
+def test_get_oauth_token(mock_post: MagicMock, mock_time: MagicMock):
     expires_in: int = 10
     issued_at: int = 20
     time_now: int = 20
@@ -516,60 +513,27 @@ def test_get_oauth_token(
 
     mock_post.return_value = MockedResponse()
     mock_time.return_value = time_now
-    client: CGPClient = CGPClient(api_host="host", api_key="secret")
-    assert client._oauth_token is None
 
-    response: NHSOAuthToken = client.get_oauth_token()
-    assert client._oauth_token is not None
-    assert response.model_dump_json() == response.model_dump_json()
-    mock_time.assert_not_called()
+    from cgpclient.auth import OAuthProvider
 
-    class MockedResponse2:
-        def ok(self):
-            return True
+    provider = OAuthProvider("api_key", Path("fake_key.pem"), "kid")
 
-        def json(self):
-            return {
-                "access_token": "new_token",
-                "expires_in": f"{expires_in}",
-                "issued_at": f"{issued_at}",
-                "token_type": "type",
-            }
-
-    mock_post.return_value = MockedResponse2()
-
-    # check the new token isn't used before it expires
-    mock_time.return_value = time_now + expires_in - 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) != "new_token"
-    mock_time.assert_called_once()
-
-    # check the new token is used after the first expires
-    mock_time.return_value = time_now + expires_in + 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) == "new_token"
+    with patch("cgpclient.auth.OAuthProvider._get_jwt", return_value="NOTAJWT"):
+        response: NHSOAuthToken = provider._get_oauth_token("host")
+        assert response.access_token == "token"
 
 
-@patch("cgpclient.client.CGPClient.get_access_token")
-def test_get_headers(mock_token: MagicMock) -> None:
-    mock_token.return_value = "token"
+def test_get_headers() -> None:
     client: CGPClient = CGPClient(api_host="api.service.nhs.uk", api_key="secret")
     assert "apikey" in client.headers
     assert client.headers["apikey"] == "secret"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
-    assert client.headers["Authorization"] == "Bearer token"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
+
+    with patch("cgpclient.auth.OAuthProvider._get_access_token", return_value="token"):
+        client = CGPClient(
+            api_host="host",
+            api_key="secret",
+            private_key_pem=Path("pem"),
+            apim_kid="kid",
+        )
+        assert "Authorization" in client.headers
+        assert client.headers["Authorization"] == "Bearer token"

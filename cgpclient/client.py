@@ -3,22 +3,18 @@ from __future__ import annotations
 
 import logging
 import typing
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from time import time
 
-import jwt
-import requests  # type: ignore
 from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.documentreference import DocumentReference
 from fhir.resources.R4B.patient import Patient
 from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
-from pydantic import BaseModel
 from tabulate import tabulate  # type: ignore
 
+from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object
 from cgpclient.drsupload import upload_files_with_drs
@@ -31,12 +27,7 @@ from cgpclient.fhir import (  # type: ignore
     search_for_document_references,
     upload_files,
 )
-from cgpclient.utils import (
-    APIM_BASE_URL,
-    REQUEST_TIMEOUT_SECS,
-    CGPClientException,
-    create_uuid,
-)
+from cgpclient.utils import CGPClientException, create_uuid
 
 
 @dataclass
@@ -153,13 +144,6 @@ class CGPReferrals:
     referrals: list[CGPReferral]
 
 
-class NHSOAuthToken(BaseModel):
-    access_token: str
-    expires_in: str
-    token_type: str
-    issued_at: str
-
-
 class CGPClient:
     """A client for interacting with Clinical Genomics Platform
     APIs in the NHS APIM"""
@@ -167,6 +151,7 @@ class CGPClient:
     def __init__(
         self,
         api_host: str,
+        auth_provider: AuthProvider | None = None,
         api_key: str | None = None,
         api_name: str | None = None,
         private_key_pem: Path | None = None,
@@ -176,18 +161,20 @@ class CGPClient:
         output_dir: Path | None = None,
         config: ClientConfig | None = None,
     ):
-        self.api_key = api_key
         self.api_host = api_host
         self.api_name = api_name
-        self.private_key_pem = private_key_pem
-        self.apim_kid = apim_kid
         self.override_api_base_url = override_api_base_url
         self.dry_run = dry_run
         self.output_dir = output_dir
         self.config = ClientConfig() if config is None else config
 
-        self._oauth_token: NHSOAuthToken | None = None
-        self._using_sandbox_env = self.api_host.startswith("sandbox.")
+        # Use provided auth provider or create one from legacy parameters
+        self.auth_provider = auth_provider or create_auth_provider(
+            api_host=api_host,
+            api_key=api_key,
+            private_key_pem=private_key_pem,
+            apim_kid=apim_kid,
+        )
 
         if self.output_dir is not None:
             self.output_dir = self.output_dir / Path(create_uuid())
@@ -203,113 +190,9 @@ class CGPClient:
         return self.api_host
 
     @property
-    def oauth_endpoint(self) -> str:
-        """Return the NHS OAuth endpoint for the environment"""
-        return f"https://{self.api_host}/oauth2/token"
-
-    def get_jwt(self) -> str:
-        """Create a JWT in the NHS format and sign it with the private key"""
-        # following: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication # noqa: E501
-        if self.private_key_pem is None or self.apim_kid is None:
-            raise CGPClientException("Can't create JWT without private key PEM and KID")
-
-        with open(self.private_key_pem, "r", encoding="utf-8") as pem:
-            private_key = pem.read()
-
-        expiry_time: int = int(time()) + (5 * 60)  # 5 mins in the future
-
-        logging.debug(
-            "Creating JWT for KID: %s and signing with private key: %s",
-            self.apim_kid,
-            self.private_key_pem,
-        )
-
-        return jwt.encode(
-            payload={
-                "sub": self.api_key,
-                "iss": self.api_key,
-                "jti": str(uuid.uuid4()),
-                "aud": self.oauth_endpoint,
-                "exp": expiry_time,
-            },
-            key=private_key,
-            algorithm="RS512",
-            headers={"kid": self.apim_kid},
-        )
-
-    def request_access_token(self) -> NHSOAuthToken:
-        """Fetch an OAuth token from the NHS OAuth server"""
-        # following: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication # noqa: E501
-        logging.info("Requesting OAuth token from: %s", self.oauth_endpoint)
-        response: requests.Response = requests.post(
-            url=self.oauth_endpoint,
-            headers={"content-type": "application/x-www-form-urlencoded"},
-            data={
-                "grant_type": "client_credentials",
-                "client_assertion_type": (
-                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-                ),
-                "client_assertion": self.get_jwt(),
-            },
-            timeout=REQUEST_TIMEOUT_SECS,
-        )
-        if response.ok:
-            logging.info("Got successful response from OAuth server")
-            return NHSOAuthToken.model_validate(response.json())
-
-        raise CGPClientException(
-            f"Failed to get OAuth token, status code: {response.status_code}"
-        )
-
-    def get_oauth_token(self) -> NHSOAuthToken:
-        """Get the current OAuth token, making a new request to the NHS
-        OAuth server if it is not available or has expired"""
-        if self._oauth_token is None or (
-            int(time())
-            > int(self._oauth_token.issued_at) + int(self._oauth_token.expires_in)
-        ):
-            # we need to fetch a new token from the NHS
-            logging.info("Requesting new OAuth token")
-            self._oauth_token = self.request_access_token()
-
-        return self._oauth_token
-
-    def get_access_token(self) -> str | None:
-        """Get the current OAuth access token value"""
-        if self._using_sandbox_env:
-            logging.info("No access token required in sandbox environment")
-            return None
-
-        return self.get_oauth_token().access_token
-
-    @property
     def headers(self) -> dict[str, str]:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
-
-        if self._using_sandbox_env:
-            logging.debug("Skipping authentication for sandbox environment")
-            return {}
-
-        if self.private_key_pem is not None:
-            # use OAuth if we're given a private key
-            logging.debug("Using signed JWT authentication")
-            return {"Authorization": f"Bearer {self.get_access_token()}"}
-
-        if self.api_key is not None:
-            # use the supplied API key
-            logging.debug("Using API key authentication")
-            if APIM_BASE_URL in self.api_host:
-                # use APIM header
-                logging.debug("Using APIM API key header")
-                return {"apikey": self.api_key}
-
-            # otherwise use standard header
-            logging.debug("Using standard API key header")
-            return {"X-API-Key": self.api_key}
-
-        # no auth by default
-        logging.debug("No API authentication")
-        return {}
+        return self.auth_provider.get_headers(self.api_host)
 
     def get_service_request(self, referral_id: str) -> CGPServiceRequest:
         """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
