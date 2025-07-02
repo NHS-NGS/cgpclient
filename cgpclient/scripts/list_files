@@ -198,7 +198,7 @@ def main(cmdline_args: list[str]) -> None:
     )
 
     files.print_table(
-        sort_by="name",
+        sort_by="last_updated",
         summary=not args.all,
         include_drs_access_urls=args.include_drs_access_urls,
     )
