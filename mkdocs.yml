@@ -10,11 +10,12 @@ nav:
     - set_up/jwt_auth.md
     - set_up/configuration.md
   - Uses:
-    - uses/code.md
     - uses/fetching_files.md
     - uses/upload_dragen_run.md
   - Contributing: contributing.md
-  - Workshops: workshops.md
+  - Training:
+    - Training: training/training.md
+    - dWGS Upload: training/dwgs_upload.md
 
 theme:
   name: material

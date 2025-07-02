@@ -4,7 +4,7 @@ This repository provides a Python client designed to streamline interactions wit
 
 [**Get started with the CGP Client** :material-arrow-right:](set_up/get_started.md){ .md-button .md-button--primary }
 
-[**Discover our library** :material-arrow-right:](uses/code.md){ .md-button .md-button--secondary }
+[**Discover our library** :material-arrow-right:](https://github.com/NHS-NGS/cgpclient){ .md-button .md-button--secondary }
 
 [**Start contributing** :material-arrow-right:](contributing.md){ .md-button .md-button--secondary }
 
