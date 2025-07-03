@@ -1,3 +1,4 @@
+# Fetch Genomic Files
 
 To see usage instructions for the CLI script you can run:
 

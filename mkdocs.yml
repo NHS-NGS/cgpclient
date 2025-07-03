@@ -5,13 +5,14 @@ repo_name: NHS-NGS/cgpclient
 nav:
   - Home: index.md
   - Set up:
-    - set_up/get_started.md
-    - set_up/key_auth.md
-    - set_up/jwt_auth.md
-    - set_up/configuration.md
+    - Set up: set_up/set_up.md
+    - Register: set_up/register.md
+    - Authenticate: set_up/auth.md
+    - Configuration: set_up/config.md
   - Uses:
-    - uses/fetching_files.md
-    - uses/upload_dragen_run.md
+    - Uses: uses/uses.md
+    - Fetching Files: uses/fetching_files.md
+    - dWGS: uses/upload_dragen_run.md
   - Contributing: contributing.md
   - Training:
     - Training: training/training.md
@@ -86,6 +87,7 @@ markdown_extensions:
   - pymdownx.emoji:
       emoji_index: !!python/name:material.extensions.emoji.twemoji
       emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - attr_list
       
 plugins:
   - search:
