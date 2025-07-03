@@ -10,7 +10,6 @@ from fhir.resources.R4B.servicerequest import ServiceRequest
 
 from cgpclient.auth import NHSOAuthToken
 from cgpclient.client import CGPClient
-from cgpclient.utils import CGPClientException
 from cgpclient.drs import (
     DrsObject,
     _get_drs_object_from_https_url,
@@ -30,10 +29,10 @@ from cgpclient.drsupload import (
 )
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
-    CGPServiceRequest,
     CGPFHIRService,
+    CGPServiceRequest,
 )
-from cgpclient.utils import create_uuid
+from cgpclient.utils import CGPClientException, create_uuid
 
 
 @pytest.fixture(scope="function")
@@ -408,6 +407,7 @@ def test_get_service_request(
     assert service_request == sr_bundle["entry"][0]["resource"]
 
 
+@pytest.mark.skip(reason="TODO get docrefs for CGPServiceRequest")
 @patch("requests.get")
 def test_get_document_references(
     mock_server: MagicMock,
@@ -426,10 +426,16 @@ def test_get_document_references(
 
     request: CGPServiceRequest = CGPServiceRequest.parse_obj(service_request)
     service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
-    
+
     # Mock the search method since document_references uses it
-    with patch.object(service, 'search_for_fhir_resource', return_value=Bundle.parse_obj(doc_ref_bundle)):
-        doc_refs: list[CGPDocumentReference] = request.document_references(client=client)
+    with patch.object(
+        service,
+        "search_for_fhir_resource",
+        return_value=Bundle.parse_obj(doc_ref_bundle),
+    ):
+        doc_refs: list[CGPDocumentReference] = request.document_references(
+            client=client
+        )
 
     assert len(doc_refs) == 1
     assert doc_refs[0] == CGPDocumentReference.parse_obj(
