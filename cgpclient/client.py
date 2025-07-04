@@ -68,7 +68,8 @@ class CGPFiles:
         summary: bool = False,
         include_drs_access_urls: bool = False,
         sort_by: str = "name",
-        table_format: str = "simple",
+        table_format: str = "simple_outline",
+        pivot: bool = False,
     ) -> None:
         """Print the list of files as a table"""
         self.files.sort(key=lambda f: getattr(f, sort_by))
@@ -94,13 +95,21 @@ class CGPFiles:
         if include_drs_access_urls:
             cols.extend(["s3_url", "htsget_url"])
 
-        print(
-            tabulate(
-                [[getattr(f, c) for c in cols] for f in self.files],
-                headers=cols,
-                tablefmt=table_format,
-            )
-        )
+        rows: list[list[str]] = [[getattr(f, c) for c in cols] for f in self.files]
+
+        if pivot:
+            # print each row as its own table
+            for row in rows:
+                print(
+                    tabulate(
+                        zip(cols, row),
+                        headers=["file property", "value"],
+                        tablefmt=table_format,
+                    )
+                )
+
+        else:
+            print(tabulate(rows, headers=cols, tablefmt=table_format))
 
 
 @dataclass
