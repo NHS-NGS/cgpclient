@@ -1,4 +1,5 @@
 import hashlib
+import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,3 +31,26 @@ def create_uuid() -> str:
 def get_current_datetime() -> str:
     """Return the current datetime in ISO format in the UTC timezone"""
     return datetime.now(timezone.utc).isoformat()
+
+
+def setup_logger(verbose: bool = False, debug: bool = False) -> logging.Logger:
+    log = logging.getLogger()
+
+    if verbose:
+        log.setLevel(logging.INFO)
+
+    if debug:
+        log.setLevel(logging.DEBUG)
+
+    ch = logging.StreamHandler()
+    ch.setLevel(log.level)
+    ch.setFormatter(
+        logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    )
+
+    log.addHandler(ch)
+
+    return log

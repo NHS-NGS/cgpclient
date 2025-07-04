@@ -27,6 +27,8 @@ from cgpclient.drs import (
 from cgpclient.htsget import htsget_base_url, mime_type_to_htsget_endpoint
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, md5sum
 
+log = logging.getLogger(__name__)
+
 mimetypes.add_type("text/vcf", ext=".vcf")
 mimetypes.add_type("application/cram", ext=".cram")
 mimetypes.add_type("application/bam", ext=".bam")
@@ -156,9 +158,9 @@ def _request_upload(
     client: cgpclient.client.CGPClient,  # type: ignore
 ) -> DrsUploadResponse:
     """Request upload details from the DRS server"""
-    logging.info("Requesting upload")
+    log.info("Requesting upload")
 
-    logging.debug(upload_request.model_dump_json(exclude_defaults=True))
+    log.debug(upload_request.model_dump_json(exclude_defaults=True))
 
     response: requests.Response = requests.post(
         url=f"https://{client.api_base_url}/upload-request",
@@ -169,11 +171,11 @@ def _request_upload(
     response.raise_for_status()
 
     if response.ok:
-        logging.info("Upload request successful")
+        log.info("Upload request successful")
         drs_response: DrsUploadResponse = DrsUploadResponse.model_validate(
             response.json()
         )
-        logging.debug(drs_response.model_dump_json(exclude_defaults=True))
+        log.debug(drs_response.model_dump_json(exclude_defaults=True))
         return drs_response
 
     raise CGPClientException("Upload request failed")
@@ -193,7 +195,7 @@ def _upload_file_to_s3(
         raise CGPClientException(f"Invalid upload_method type: {upload_method.type}")
 
     if dry_run:
-        logging.info("Dry run, so skipping uploading S3 object")
+        log.info("Dry run, so skipping uploading S3 object")
         return
 
     try:
@@ -212,9 +214,9 @@ def _upload_file_to_s3(
     try:
         s3_url: str = upload_method.access_url.url
         parsed_url: S3Url = parse_s3_url(s3_url=s3_url)
-        logging.info("Uploading %s", filename)
+        log.info("Uploading %s", filename)
         s3.upload_file(filename, Bucket=parsed_url.bucket, Key=parsed_url.key)
-        logging.info("Uploaded successfully to %s", s3_url)
+        log.info("Uploaded successfully to %s", s3_url)
     except Exception as e:
         raise CGPClientException("Error uploading file to S3") from e
 

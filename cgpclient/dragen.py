@@ -6,30 +6,30 @@ import typing
 from pathlib import Path
 
 from fhir.resources.R4B.bundle import Bundle
-from fhir.resources.R4B.codeableconcept import CodeableConcept
-from fhir.resources.R4B.coding import Coding
-from fhir.resources.R4B.composition import Composition, CompositionSection
+from fhir.resources.R4B.composition import Composition
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
     DocumentReferenceRelatesTo,
 )
-from fhir.resources.R4B.extension import Extension
-from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
+from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
 import cgpclient
 import cgpclient.client
 from cgpclient.fhir import (  # type: ignore
-    CompositionStatus,
     DocumentReferenceRelationship,
-    ProcedureStatus,
     bundle_for,
+    create_composition,
     create_drs_document_references,
+    create_procedure,
+    create_specimen,
     post_fhir_resource,
     reference_for,
 )
-from cgpclient.utils import CGPClientException, create_uuid, get_current_datetime
+from cgpclient.utils import CGPClientException
+
+log = logging.getLogger(__name__)
 
 
 class FastqListEntry(BaseModel):
@@ -56,7 +56,7 @@ def read_fastq_list(
         for row in csv.DictReader(file):
             entry: FastqListEntry = FastqListEntry.model_validate(row)
             if sample_id is None:
-                logging.info("Using first RGSM found in file: %s", entry.RGSM)
+                log.info("Using first RGSM found in file: %s", entry.RGSM)
                 sample_id = entry.RGSM
             if entry.RGSM == sample_id:
                 # resolve the FASTQ paths relative to the directory
@@ -71,9 +71,11 @@ def read_fastq_list(
 
                 entries.append(entry)
             else:
-                logging.debug("Ignoring RGSM: %s", entry.RGSM)
+                log.debug("Ignoring RGSM: %s", entry.RGSM)
 
-    logging.info("Read %i entries from FASTQ list file", len(entries))
+    log.info(
+        "Read %i entries from FASTQ list file for sample: %s", len(entries), sample_id
+    )
     return entries
 
 
@@ -118,103 +120,7 @@ def fastq_list_entry_to_document_references(
 
 
 @typing.no_type_check
-def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
-    logging.info("Creating Specimen resource for germline blood sample")
-
-    return Specimen(
-        id=create_uuid(),
-        identifier=[client.config.sample_identifier],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="germline",
-                            display="Germline",
-                        )
-                    ]
-                ),
-            )
-        ],
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://snomed.info/sct",
-                    code="445295009",
-                    display="Blood specimen with EDTA",
-                )
-            ]
-        ),
-    )
-
-
-@typing.no_type_check
-def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
-    logging.info("Creating Specimen resource for tumour sample")
-
-    return Specimen(
-        id=create_uuid(),
-        identifier=[
-            client.config.sample_identifier,
-            client.config.tumour_identifier,
-        ],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="solid-tumour",
-                            display="Solid Tumour",
-                        )
-                    ]
-                ),
-            )
-        ],
-    )
-
-
-def create_specimen(client: cgpclient.client.CGPClient) -> Specimen:
-    if client.config.tumour_id is not None:
-        return create_tumour_sample(
-            client=client,
-        )
-
-    return create_germline_sample(
-        client=client,
-    )
-
-
-@typing.no_type_check
-def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
-    return Procedure(
-        id=create_uuid(),
-        identifier=[client.config.run_identifier],
-        code=CodeableConcept(
-            coding=[
-                Coding(
-                    code="461571000124105",
-                    system="http://snomed.info/sct",
-                    display="Whole genome sequencing",
-                )
-            ]
-        ),
-        subject=client.config.participant_reference,
-        performer=[ProcedurePerformer(actor=client.config.org_reference)],
-        basedOn=[client.config.referral_reference],
-        status=ProcedureStatus.COMPLETED,
-    )
-
-
-@typing.no_type_check
-def map_entries_to_bundle(
+def map_fastq_list_entries_to_bundle(
     entries: list[FastqListEntry],
     client: cgpclient.client.CGPClient,
     run_info_file: Path | None = None,
@@ -243,32 +149,11 @@ def map_entries_to_bundle(
             )
         )
 
-    composition: Composition = Composition(
-        id=create_uuid(),
-        status=CompositionStatus.FINAL,
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://loinc.org",
-                    code="86206-0",
-                    display="Whole genome sequence analysis",
-                )
-            ]
-        ),
-        date=get_current_datetime(),
-        author=[client.config.org_reference],
-        title="WGS sample run",
-        section=[
-            CompositionSection(title="sample", entry=[reference_for(specimen)]),
-            CompositionSection(title="run", entry=[reference_for(procedure)]),
-            CompositionSection(
-                title="files",
-                entry=[
-                    reference_for(document_reference)
-                    for document_reference in document_references
-                ],
-            ),
-        ],
+    composition: Composition = create_composition(
+        specimen=specimen,
+        procedure=procedure,
+        document_references=document_references,
+        client=client,
     )
 
     return bundle_for([composition, specimen, procedure] + document_references)
@@ -289,7 +174,7 @@ def upload_dragen_run(
     if client.config.sample_id is None:
         client.config.sample_id = entries[0].RGSM
 
-    bundle: Bundle = map_entries_to_bundle(
+    bundle: Bundle = map_fastq_list_entries_to_bundle(
         entries=entries,
         run_info_file=run_info_file,
         client=client,
