@@ -404,7 +404,13 @@ class CGPFHIRService:
         self, filenames: list[Path]
     ) -> list[DocumentReference]:
         """Upload the files using the DRS upload protocol and return a DocumentReference"""
-        drs_objects: list[DrsObject] = upload_files_with_drs(filenames=filenames)
+        drs_objects: list[DrsObject] = upload_files_with_drs(
+            filenames=filenames,
+            headers=self.headers,
+            api_base_url=self.api_base_url,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
+        )
 
         return [
             self.document_reference_for_drs_object(
