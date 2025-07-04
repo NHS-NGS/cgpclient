@@ -35,7 +35,6 @@ from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 
 import cgpclient
-import cgpclient.client
 from cgpclient.drs import DrsObject
 from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.utils import (
@@ -206,10 +205,19 @@ CGPClientDevice: Device = Device(
 class CGPFHIRService:
     """Service class for FHIR operations, encapsulating client and config"""
 
-    def __init__(self, api_base_url: str, headers: dict, config: FHIRConfig):
+    def __init__(
+        self,
+        api_base_url: str,
+        headers: dict,
+        config: FHIRConfig,
+        dry_run: bool,
+        output_dir: Path | None = None,
+    ):
         self.api_base_url = api_base_url
         self.headers = headers
         self.config = config
+        self.dry_run = dry_run
+        self.output_dir = output_dir
 
     @property
     def base_url(self) -> str:
@@ -350,6 +358,149 @@ class CGPFHIRService:
             return Patient.parse_obj(bundle.entry[0].resource.dict())
         raise CGPClientException("Unexpected number of Patients found")
 
+    @typing.no_type_check
+    def document_reference_for_drs_object(
+        self, drs_object: DrsObject
+    ) -> DocumentReference:
+        """Create a DocumentReference resource corresponding to a DRS object"""
+        return DocumentReference(
+            id=create_uuid(),
+            identifier=[self.config.file_identifier(drs_object.name)],
+            status=DocumentReferenceStatus.CURRENT,
+            docStatus=DocumentReferenceDocStatus.FINAL,
+            author=[self.config.org_reference],
+            subject=self.config.participant_reference,
+            content=[
+                DocumentReferenceContent(
+                    attachment=Attachment(
+                        url=drs_object.self_uri,
+                        contentType=drs_object.mime_type,
+                        title=drs_object.name,
+                        # in FHIR R4 size is an unsignedInt:
+                        # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
+                        size=min(drs_object.size, MAX_UNSIGNED_INT),
+                        hash=drs_object.checksums[0].checksum,
+                    )
+                ),
+            ],
+            context=DocumentReferenceContext(related=self.config.related_references),
+            meta=Meta(
+                # as a work around to the size limit above, we include the real
+                # file size as a string here as a meta tag
+                tag=[
+                    Coding(
+                        system="https://genomicsengland.co.uk/workaround-attachment-size",
+                        code=f"{drs_object.size}",
+                        display="attachment size in bytes",
+                    )
+                ]
+            ),
+        )
+
+    def create_drs_document_references(
+        self, filenames: list[Path]
+    ) -> list[DocumentReference]:
+        """Upload the files using the DRS upload protocol and return a DocumentReference"""
+        drs_objects: list[DrsObject] = upload_files_with_drs(filenames=filenames)
+
+        return [
+            self.document_reference_for_drs_object(
+                drs_object=o,
+            )
+            for o in drs_objects
+        ]
+
+    def upload_files(
+        self,
+        filenames: list[Path],
+    ) -> None:
+        """Upload the files using the DRS upload protocol and post
+        DocumentReferences to the FHIR server"""
+
+        document_references: list[DocumentReference] = (
+            self.create_drs_document_references(
+                filenames=filenames,
+            )
+        )
+
+        self.post_fhir_resource(resource=bundle_for(document_references))
+
+    def add_workspace_meta_tag(self, resource: DomainResource) -> None:
+        """Add the workspace ID to the FHIR meta tags"""
+        if self.config.workspace_id is not None:
+            if resource.meta is None:
+                resource.meta = Meta()
+
+            if resource.meta.tag is None:
+                resource.meta.tag = []
+
+            logging.debug(
+                "Adding workspace ID %s to resource meta tags",
+                self.config.workspace_id,
+            )
+            resource.meta.tag.append(self.config.workspace_meta_tag)
+
+    def add_workspace_meta_tag_to_bundle(self, bundle: Bundle) -> None:
+        for entry in bundle.entry:
+            self.add_workspace_meta_tag(resource=entry.resource)
+
+    def post_fhir_resource(
+        self,
+        resource: DomainResource,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        """Post a FHIR resource to the FHIR server"""
+        url: str = f"{fhir_base_url(self.api_base_url)}/{resource.resource_type}/"
+
+        if resource.resource_type == Bundle.__name__ and resource.type in (
+            BundleType.BATCH,
+            BundleType.TRANSACTION,
+        ):
+            # these bundle types are posted to the root of the FHIR server
+            logging.info("Posting bundle to the root FHIR endpoint")
+            url = f"{fhir_base_url(self.api_base_url)}/"
+            if self.config.org_reference is not None:
+                resource = add_provenance_for_bundle(
+                    bundle=resource, org_reference=self.config.org_reference
+                )
+            self.add_workspace_meta_tag_to_bundle(bundle=resource)
+            logging.info("Posting bundle including %i entries", len(resource.entry))
+
+        self.add_workspace_meta_tag(resource=resource)
+
+        logging.info("Posting resource to endpoint: %s", url)
+
+        if self.output_dir is not None:
+            output_file: Path = self.output_dir / Path("fhir_resources.json")
+            logging.info("Writing FHIR resource to %s", output_file)
+            with open(output_file, "a", encoding="utf-8") as out:
+                print(resource.json(exclude_none=True), file=out)
+
+        if self.dry_run:
+            logging.info("Dry run, so skipping posting resource")
+            return
+
+        response: requests.Response = requests.post(
+            url=url,
+            headers=self.headers,
+            params=params,
+            data=resource.json(exclude_none=True),
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            logging.info("Successfully posted FHIR resource")
+        else:
+            logging.error(
+                "Failed to post resource to: %s status: %i response: %s",
+                url,
+                response.status_code,
+                response.text,
+            )
+
+            raise CGPClientException(
+                f"Error posting resource, got status code: {response.status_code}"
+            )
+
 
 def create_resource_from_dict(data: dict) -> DomainResource:
     return construct_fhir_element(data["resourceType"], data)
@@ -442,165 +593,6 @@ def add_provenance_for_bundle(bundle: Bundle, org_reference: Reference) -> Bundl
     # include the original resources and the Provenance resources
     bundle.entry = bundle.entry + provenance_resources
     return bundle
-
-
-@typing.no_type_check
-def document_reference_for_drs_object(
-    drs_object: DrsObject, client: cgpclient.client.CGPClient
-) -> DocumentReference:
-    """Create a DocumentReference resource corresponding to a DRS object"""
-    return DocumentReference(
-        id=create_uuid(),
-        identifier=[client.fhir_config.file_identifier(drs_object.name)],
-        status=DocumentReferenceStatus.CURRENT,
-        docStatus=DocumentReferenceDocStatus.FINAL,
-        author=[client.fhir_config.org_reference],
-        subject=client.fhir_config.participant_reference,
-        content=[
-            DocumentReferenceContent(
-                attachment=Attachment(
-                    url=drs_object.self_uri,
-                    contentType=drs_object.mime_type,
-                    title=drs_object.name,
-                    # in FHIR R4 size is an unsignedInt:
-                    # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
-                    size=min(drs_object.size, MAX_UNSIGNED_INT),
-                    hash=drs_object.checksums[0].checksum,
-                )
-            ),
-        ],
-        context=DocumentReferenceContext(related=client.fhir_config.related_references),
-        meta=Meta(
-            # as a work around to the size limit above, we include the real
-            # file size as a string here as a meta tag
-            tag=[
-                Coding(
-                    system="https://genomicsengland.co.uk/workaround-attachment-size",
-                    code=f"{drs_object.size}",
-                    display="attachment size in bytes",
-                )
-            ]
-        ),
-    )
-
-
-def create_drs_document_references(
-    filenames: list[Path],
-    client: cgpclient.client.CGPClient,
-) -> list[DocumentReference]:
-    """Upload the files using the DRS upload protocol and return a DocumentReference"""
-    drs_objects: list[DrsObject] = upload_files_with_drs(
-        filenames=filenames, client=client
-    )
-
-    return [
-        document_reference_for_drs_object(
-            drs_object=o,
-            client=client,
-        )
-        for o in drs_objects
-    ]
-
-
-def upload_files(
-    filenames: list[Path],
-    client: cgpclient.client.CGPClient,
-) -> None:
-    """Upload the files using the DRS upload protocol and post
-    DocumentReferences to the FHIR server"""
-
-    document_references: list[DocumentReference] = create_drs_document_references(
-        filenames=filenames,
-        client=client,
-    )
-
-    post_fhir_resource(
-        resource=bundle_for(document_references),
-        client=client,
-    )
-
-
-def add_workspace_meta_tag(
-    resource: DomainResource, client: cgpclient.client.CGPClient
-) -> None:
-    """Add the workspace ID to the FHIR meta tags"""
-    if client.fhir_config.workspace_id is not None:
-        if resource.meta is None:
-            resource.meta = Meta()
-
-        if resource.meta.tag is None:
-            resource.meta.tag = []
-
-        logging.debug(
-            "Adding workspace ID %s to resource meta tags",
-            client.fhir_config.workspace_id,
-        )
-        resource.meta.tag.append(client.fhir_config.workspace_meta_tag)
-
-
-def add_workspace_meta_tag_to_bundle(
-    bundle: Bundle, client: cgpclient.client.CGPClient
-) -> None:
-    for entry in bundle.entry:
-        add_workspace_meta_tag(resource=entry.resource, client=client)
-
-
-def post_fhir_resource(
-    resource: DomainResource,
-    client: cgpclient.client.CGPClient,
-    params: dict[str, str] | None = None,
-) -> None:
-    """Post a FHIR resource to the FHIR server"""
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource.resource_type}/"
-
-    if resource.resource_type == Bundle.__name__ and resource.type in (
-        BundleType.BATCH,
-        BundleType.TRANSACTION,
-    ):
-        # these bundle types are posted to the root of the FHIR server
-        logging.info("Posting bundle to the root FHIR endpoint")
-        url = f"{fhir_base_url(client.api_base_url)}/"
-        if client.fhir_config.org_reference is not None:
-            resource = add_provenance_for_bundle(
-                bundle=resource, org_reference=client.fhir_config.org_reference
-            )
-        add_workspace_meta_tag_to_bundle(bundle=resource, client=client)
-        logging.info("Posting bundle including %i entries", len(resource.entry))
-
-    add_workspace_meta_tag(resource=resource, client=client)
-
-    logging.info("Posting resource to endpoint: %s", url)
-
-    if client.output_dir is not None:
-        output_file: Path = client.output_dir / Path("fhir_resources.json")
-        logging.info("Writing FHIR resource to %s", output_file)
-        with open(output_file, "a", encoding="utf-8") as out:
-            print(resource.json(exclude_none=True), file=out)
-
-    if client.dry_run:
-        logging.info("Dry run, so skipping posting resource")
-        return
-
-    response: requests.Response = requests.post(
-        url=url,
-        headers=client.headers,
-        params=params,
-        data=resource.json(exclude_none=True),
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok:
-        logging.info("Successfully posted FHIR resource")
-    else:
-        logging.error(
-            "Failed to post resource to: %s status: %i response: %s",
-            url,
-            response.status_code,
-            response.text,
-        )
-
-        raise CGPClientException(
-            f"Error posting resource, got status code: {response.status_code}"
-        )
 
 
 class FHIRConfig:

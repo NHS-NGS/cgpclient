@@ -18,15 +18,13 @@ from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
-import cgpclient
-import cgpclient.client
 from cgpclient.fhir import (  # type: ignore
+    CGPFHIRService,
     CompositionStatus,
     DocumentReferenceRelationship,
+    FHIRConfig,
     ProcedureStatus,
     bundle_for,
-    create_drs_document_references,
-    post_fhir_resource,
     reference_for,
 )
 from cgpclient.utils import CGPClientException, create_uuid, get_current_datetime
@@ -80,7 +78,7 @@ def read_fastq_list(
 @typing.no_type_check
 def fastq_list_entry_to_document_references(
     entry: FastqListEntry,
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
 ) -> list[DocumentReference]:
     """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
@@ -90,9 +88,8 @@ def fastq_list_entry_to_document_references(
     if entry.Read2File:
         fastq_files.append(entry.Read2File)
 
-    doc_refs: list[DocumentReference] = create_drs_document_references(
-        filenames=fastq_files,
-        client=client,
+    doc_refs: list[DocumentReference] = fhir_service.create_drs_document_references(
+        filenames=fastq_files
     )
 
     if entry.Read2File:
@@ -118,14 +115,14 @@ def fastq_list_entry_to_document_references(
 
 
 @typing.no_type_check
-def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
+def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
     logging.info("Creating Specimen resource for germline blood sample")
 
     return Specimen(
         id=create_uuid(),
-        identifier=[client.config.sample_identifier],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
+        identifier=[fhir_config.sample_identifier],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
         extension=[
             Extension(
                 url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
@@ -153,17 +150,17 @@ def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
 
 
 @typing.no_type_check
-def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
+def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
     logging.info("Creating Specimen resource for tumour sample")
 
     return Specimen(
         id=create_uuid(),
         identifier=[
-            client.config.sample_identifier,
-            client.config.tumour_identifier,
+            fhir_config.sample_identifier,
+            fhir_config.tumour_identifier,
         ],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
         extension=[
             Extension(
                 url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
@@ -181,22 +178,17 @@ def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
     )
 
 
-def create_specimen(client: cgpclient.client.CGPClient) -> Specimen:
-    if client.config.tumour_id is not None:
-        return create_tumour_sample(
-            client=client,
-        )
-
-    return create_germline_sample(
-        client=client,
-    )
+def create_specimen(fhir_config: FHIRConfig) -> Specimen:
+    if fhir_config.tumour_id is not None:
+        return create_tumour_sample(fhir_config=fhir_config)
+    return create_germline_sample(fhir_config=fhir_config)
 
 
 @typing.no_type_check
-def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
+def create_procedure(fhir_config: FHIRConfig) -> Procedure:
     return Procedure(
         id=create_uuid(),
-        identifier=[client.config.run_identifier],
+        identifier=[fhir_config.run_identifier],
         code=CodeableConcept(
             coding=[
                 Coding(
@@ -206,9 +198,9 @@ def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
                 )
             ]
         ),
-        subject=client.config.participant_reference,
-        performer=[ProcedurePerformer(actor=client.config.org_reference)],
-        basedOn=[client.config.referral_reference],
+        subject=fhir_config.participant_reference,
+        performer=[ProcedurePerformer(actor=fhir_config.org_reference)],
+        basedOn=[fhir_config.referral_reference],
         status=ProcedureStatus.COMPLETED,
     )
 
@@ -216,14 +208,14 @@ def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
 @typing.no_type_check
 def map_entries_to_bundle(
     entries: list[FastqListEntry],
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
     run_info_file: Path | None = None,
 ) -> Bundle:
     """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
 
-    specimen: Specimen = create_specimen(client=client)
+    specimen: Specimen = create_specimen(fhir_config=fhir_service.config)
 
-    procedure: Procedure = create_procedure(client=client)
+    procedure: Procedure = create_procedure(fhir_config=fhir_service.config)
 
     document_references: list[DocumentReference] = []
 
@@ -231,16 +223,13 @@ def map_entries_to_bundle(
         document_references.extend(
             fastq_list_entry_to_document_references(
                 entry=entry,
-                client=client,
+                fhir_service=fhir_service,
             )
         )
 
     if run_info_file is not None:
         document_references.extend(
-            create_drs_document_references(
-                filenames=[run_info_file],
-                client=client,
-            )
+            fhir_service.create_drs_document_references(filenames=[run_info_file])
         )
 
     composition: Composition = Composition(
@@ -256,7 +245,7 @@ def map_entries_to_bundle(
             ]
         ),
         date=get_current_datetime(),
-        author=[client.config.org_reference],
+        author=[fhir_service.config.org_reference],
         title="WGS sample run",
         section=[
             CompositionSection(title="sample", entry=[reference_for(specimen)]),
@@ -276,26 +265,22 @@ def map_entries_to_bundle(
 
 def upload_dragen_run(
     fastq_list_csv: Path,
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
     run_info_file: Path | None = None,
 ) -> None:
     """Convert a FASTQ list CSV into DRS objects and FHIR resources, and upload
     the FASTQs and the DRS and FHIR resources to the relevant services
     """
+    fhir_config = fhir_service.config
     entries: list[FastqListEntry] = read_fastq_list(
-        fastq_list_csv=fastq_list_csv, sample_id=client.config.sample_id
+        fastq_list_csv=fastq_list_csv, sample_id=fhir_config.sample_id
     )
 
-    if client.config.sample_id is None:
-        client.config.sample_id = entries[0].RGSM
+    if fhir_config.sample_id is None:
+        fhir_config.sample_id = entries[0].RGSM
 
     bundle: Bundle = map_entries_to_bundle(
-        entries=entries,
-        run_info_file=run_info_file,
-        client=client,
+        entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
 
-    post_fhir_resource(
-        resource=bundle,  # type: ignore
-        client=client,
-    )
+    fhir_service.post_fhir_resource(resource=bundle)

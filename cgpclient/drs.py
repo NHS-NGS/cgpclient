@@ -318,24 +318,30 @@ def get_drs_object(
     return drs_object
 
 
-def post_drs_object(drs_object: DrsObject, client: cgpclient.client.CGPClient) -> None:
-    endpoint: str = f"{drs_base_url(client.api_base_url)}/objects"
+def post_drs_object(
+    drs_object: DrsObject,
+    api_base_url: str,
+    headers: dict,
+    dry_run: bool,
+    output_dir: Path | None = None,
+) -> None:
+    endpoint: str = f"{drs_base_url(api_base_url)}/objects"
     logging.info("Posting DRS object: %s", drs_object.id)
     logging.debug(drs_object.model_dump_json(exclude_defaults=True))
 
-    if client.output_dir is not None:
-        output_file: Path = client.output_dir / Path("drs_objects.json")
+    if output_dir is not None:
+        output_file: Path = output_dir / Path("drs_objects.json")
         logging.info("Writing DRS object to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(drs_object.model_dump_json(), file=out)
 
-    if client.dry_run:
+    if dry_run:
         logging.info("Dry run, so skipping posting DRS object")
         return
 
     response: requests.Response = requests.post(
         url=endpoint,
-        headers=client.headers,
+        headers=headers,
         timeout=REQUEST_TIMEOUT_SECS,
         json=drs_object.model_dump(),
     )

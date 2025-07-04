@@ -18,12 +18,7 @@ from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object
 from cgpclient.drsupload import upload_files_with_drs
-from cgpclient.fhir import (  # type: ignore
-    CGPFHIRService,
-    CGPServiceRequest,
-    FHIRConfig,
-    upload_files,
-)
+from cgpclient.fhir import CGPFHIRService, CGPServiceRequest, FHIRConfig  # type: ignore
 from cgpclient.utils import CGPClientException, create_uuid
 
 
@@ -183,6 +178,8 @@ class CGPClient:
             api_base_url=self.api_base_url,
             headers=self.headers,
             config=self.fhir_config,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
         )
 
     @property
@@ -369,12 +366,15 @@ class CGPClient:
         """Upload a file using the DRS upload protocol"""
         return upload_files_with_drs(
             filenames=[filename],
-            client=self,
+            headers=self.headers,
+            api_base_url=self.api_base_url,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
         )
 
     def upload_files(self, filenames: list[Path]) -> None:
         """Upload the files using the DRS upload protocol"""
-        upload_files(filenames=filenames, client=self)
+        self.fhir_service.upload_files(filenames=filenames)
 
     def upload_dragen_run(
         self,
@@ -386,5 +386,5 @@ class CGPClient:
         upload_dragen_run(
             fastq_list_csv=fastq_list_csv,
             run_info_file=run_info_file,
-            client=self,
+            fhir_service=self.fhir_service,
         )
