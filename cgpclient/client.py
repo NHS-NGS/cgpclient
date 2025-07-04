@@ -182,6 +182,7 @@ class CGPClient:
             output_dir=self.output_dir,
         )
 
+    # API
     @property
     def api_base_url(self) -> str:
         """Return the base URL for the overall API"""
@@ -195,6 +196,7 @@ class CGPClient:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
         return self.auth_provider.get_headers(self.api_host)
 
+    # FHIR Service delegation
     def get_service_request(self, referral_id: str) -> CGPServiceRequest:
         """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
         return self.fhir_service.get_service_request(referral_id=referral_id)
@@ -203,6 +205,7 @@ class CGPClient:
         """Fetch a FHIR Patient resource for the given NGIS participant ID"""
         return self.fhir_service.get_patient(participant_id=participant_id)
 
+    # DRS
     def download_data_from_drs_document_reference(
         self,
         document_reference: DocumentReference,
@@ -217,13 +220,18 @@ class CGPClient:
                 doc_ref_hash = content.attachment.hash.decode()  # type: ignore
             if url.startswith("drs://"):
                 drs_object: DrsObject = get_drs_object(
-                    drs_url=url, expected_hash=doc_ref_hash, client=self
+                    drs_url=url,
+                    expected_hash=doc_ref_hash,
+                    api_base_url=self.api_base_url,
+                    override_api_base_url=self.override_api_base_url,
+                    headers=self.headers,
                 )
                 drs_object.download_data(
                     output=output,
                     force_overwrite=force_overwrite,
                     expected_hash=doc_ref_hash,
-                    client=self,
+                    api_base_url=self.api_base_url,
+                    headers=self.headers,
                 )
                 return
         raise CGPClientException("Could not find DRS URL in DocumentReference")
