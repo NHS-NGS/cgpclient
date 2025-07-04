@@ -281,7 +281,11 @@ def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
 
     mock_server.return_value = MockedResponse()
 
-    response: DrsUploadResponse = _request_upload(upload_request, client)
+    response: DrsUploadResponse = _request_upload(
+        upload_request=upload_request,
+        headers=client.headers,
+        api_base_url=client.api_base_url,
+    )
 
     mock_server.assert_called_once()
 
@@ -371,7 +375,11 @@ def test_upload_file(
     mock_post_object.return_value = None
 
     drs_objects: list[DrsObject] = upload_files_with_drs(
-        filenames=[filename], client=client
+        filenames=[filename],
+        headers=client.headers,
+        api_base_url=client.api_base_url,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
     )
 
     assert len(drs_objects) == 1
@@ -401,7 +409,13 @@ def test_get_service_request(
 
     mock_server.return_value = MockedResponse()
 
-    service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+    service = CGPFHIRService(
+        client.api_base_url,
+        client.headers,
+        client.fhir_config,
+        client.dry_run,
+        client.output_dir,
+    )
     service_request: ServiceRequest = service.get_service_request("1234")
 
     assert service_request == sr_bundle["entry"][0]["resource"]
@@ -425,7 +439,13 @@ def test_get_document_references(
     mock_server.return_value = MockedResponse()
 
     request: CGPServiceRequest = CGPServiceRequest.parse_obj(service_request)
-    service = CGPFHIRService(client.api_base_url, client.headers, client.fhir_config)
+    service = CGPFHIRService(
+        api_base_url=client.api_base_url,
+        headers=client.headers,
+        config=client.fhir_config,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
+    )
 
     # Mock the search method since document_references uses it
     with patch.object(
@@ -462,7 +482,7 @@ def test_get_object_from_url(
     mock_server.return_value = MockedResponse()
 
     drs_response: DrsObject = _get_drs_object_from_https_url(
-        https_url="foo", client=client
+        https_url="foo", headers=client.headers
     )
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
@@ -472,7 +492,10 @@ def test_get_object_from_url(
 def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPClient):
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
     drs_response: DrsObject = get_drs_object(
-        drs_url=drs_object["self_uri"], client=client
+        drs_url=drs_object["self_uri"],
+        api_base_url=client.api_base_url,
+        override_api_base_url=client.override_api_base_url,
+        headers=client.headers,
     )
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
     mock_get_object.assert_called_once()
