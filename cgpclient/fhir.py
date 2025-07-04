@@ -31,6 +31,7 @@ from fhir.resources.R4B.patient import Patient
 from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.provenance import Provenance, ProvenanceAgent
 from fhir.resources.R4B.reference import Reference
+from fhir.resources.R4B.relatedperson import RelatedPerson
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 
@@ -152,24 +153,25 @@ class CGPDocumentReference(DocumentReference):
 class CGPServiceRequest(ServiceRequest):
     """A subclass of a FHIR ServiceRequest modelling an NGIS referral"""
 
-    # def get_pedigree_roles(self) -> dict[str, PedigreeRole]:
-    # TODO move this to the FHIR Service to avoid importing the client
-    #     """Search the FHIR server for the roles of each participant in the pedigree"""
-    #     # pylint: disable=no-member
-    #     proband_id: str = self.subject.reference
-    #     bundle: Bundle = self.fhir_services.search_for_fhir_resource(
-    #         resource_type=RelatedPerson.get_resource_type(),
-    #         query_params={"patient": proband_id},
-    #     )
-    #     roles: dict[str, str] = {self.subject.identifier.value: "proband"}
-    #     if bundle.entry is not None:
-    #         for entry in bundle.entry:
-    #             relative: RelatedPerson = RelatedPerson.parse_obj(entry.resource.dict())
-    #             roles[relative.identifier[0].value] = PedigreeRole(
-    #                 relative.relationship[0].coding[0].display
-    #             )
+    def get_pedigree_roles(
+        self, fhir_service: CGPFHIRService
+    ) -> dict[str, PedigreeRole]:
+        """Search the FHIR server for the roles of each participant in the pedigree"""
+        # pylint: disable=no-member
+        proband_id: str = self.subject.reference
+        bundle: Bundle = fhir_service.search_for_fhir_resource(
+            resource_type=RelatedPerson.get_resource_type(),
+            query_params={"patient": proband_id},
+        )
+        roles: dict[str, str] = {self.subject.identifier.value: "proband"}
+        if bundle.entry is not None:
+            for entry in bundle.entry:
+                relative: RelatedPerson = RelatedPerson.parse_obj(entry.resource.dict())
+                roles[relative.identifier[0].value] = PedigreeRole(
+                    relative.relationship[0].coding[0].display
+                )
 
-    #     return roles
+        return roles
 
     @property
     def referral_id(self) -> str:
@@ -179,20 +181,21 @@ class CGPServiceRequest(ServiceRequest):
                 return identifier.value
         raise CGPClientException("No NGIS referral ID for ServiceRequest")
 
-    # def document_references(self) -> list[CGPDocumentReference]:
-    #     # TODO move this to the FHIR Service to avoid importing the client
-    #     """Fetch associated DocumentReference resources from the FHIR server"""
-    #     bundle: Bundle = self.fhir_service.search_for_fhir_resource(
-    #         resource_type=DocumentReference.get_resource_type(),
-    #         query_params={"related:identifier": self.referral_id, "_count": 100},
-    #     )
+    def document_references(
+        self, fhir_service: CGPFHIRService
+    ) -> list[CGPDocumentReference]:
+        """Fetch associated DocumentReference resources from the FHIR server"""
+        bundle: Bundle = fhir_service.search_for_fhir_resource(
+            resource_type=DocumentReference.get_resource_type(),
+            query_params={"related:identifier": self.referral_id, "_count": 100},
+        )
 
-    #     doc_refs: list[CGPDocumentReference] = []
+        doc_refs: list[CGPDocumentReference] = []
 
-    #     for entry in bundle.entry:
-    #         doc_refs.append(CGPDocumentReference.parse_obj(entry.resource.dict()))
+        for entry in bundle.entry:
+            doc_refs.append(CGPDocumentReference.parse_obj(entry.resource.dict()))
 
-    #     return doc_refs
+        return doc_refs
 
 
 CGPClientDevice: Device = Device(

@@ -421,7 +421,6 @@ def test_get_service_request(
     assert service_request == sr_bundle["entry"][0]["resource"]
 
 
-@pytest.mark.skip(reason="TODO get docrefs for CGPServiceRequest")
 @patch("requests.get")
 def test_get_document_references(
     mock_server: MagicMock,
@@ -454,7 +453,7 @@ def test_get_document_references(
         return_value=Bundle.parse_obj(doc_ref_bundle),
     ):
         doc_refs: list[CGPDocumentReference] = request.document_references(
-            client=client
+            fhir_service=client.fhir_service
         )
 
     assert len(doc_refs) == 1
