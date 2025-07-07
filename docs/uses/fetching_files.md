@@ -2,43 +2,27 @@
 To see usage instructions for the CLI script you can run:
 
 ```bash
-python cgpclient/scripts/fetch_genomic_files.py --help
+cgpclient/scripts/list_files --help
 ```
 
 An example command line to fetch details for referral "r30000000001" using API key authentication:
 
 ```bash
 API_KEY=NHSAPIMAPIKEY
-python cgpclient/scripts/fetch_genomic_files.py \
---ngis_referral_id r30000000001 \
---output_file genomic_files.json \
---pretty_print \
+cgpclient/scripts/list_files \
+--referral_id r30000000001 \
 --api_host sandbox.api.service.nhs.uk \
 --api_name genomic-data-access \
 --api_key $API_KEY
 ```
 
-The script prints JSON formatted output with details of each genomic file found to the file specified with `--output_file`, if no filename is supplied then the output will be on STDOUT. The `--pretty_print` option formats the JSON so that it is human readable. Example output shown below:
+The script prints details of each genomic file found, example output:
 
 ```bash
-cat genomic_files.json
-{
-    "files": [
-        {
-            "ngis_referral_id": "r30000000001",
-            "ngis_participant_id": "p12345678302",
-            "pedigree_role": "father",
-            "ngis_document_category": "VCF_small",
-            "htsget_url": "https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/variants/analysis:multisample:a7e361c9fbabf10c0207911a05194dc0:687c0c9ab8d5504f9e40cea07ffebec2:split_joint_vcf:a884a3031864ecfb5431a2ea136603e3:1:output:r30000000001_0011_LP1000000-DNA_E11.vcf.gz"
-        },
-        {
-            "ngis_referral_id": "r30000000001",
-            "ngis_participant_id": "p12345678301",
-            "pedigree_role": "proband",
-            "ngis_document_category": "VCF_small",
-            "htsget_url": "https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/variants/analysis:multisample:a7e361c9fbabf10c0207911a05194dc0:687c0c9ab8d5504f9e40cea07ffebec2:split_joint_vcf:a884a3031864ecfb5431a2ea136603e3:1:output:r30000000001_0011_LP1000000-DNA_B05.vcf.gz"
-        },
-
+last_updated         content_type         size  author_ods_code    referral_id    participant_id    sample_id           run_id               name
+2025-07-07T10:52:13  text/fastq              2  ODS123             r12345         p12345            glh_sample_id_1234  glh_run_folder_1234  2506905-D09_L01_R2_001.fastq.ora
+2025-07-07T10:52:13  application/xml         9  ODS123             r12345         p12345            glh_sample_id_1234  glh_run_folder_1234  RunInfo.xml
+2025-07-07T10:52:13  text/fastq              2  ODS123             r12345         p12345            glh_sample_id_1234  glh_run_folder_1234  2506905-D09_L01_R1_001.fastq.ora
 ...
 
 ```
@@ -49,10 +33,8 @@ To use signed JWT authentication you can use a command line like below, assuming
 ```bash
 PEM_FILE=path/to/test-1.pem
 API_KEY=NHSAPIMAPIKEY
-python cgpclient/scripts/fetch_genomic_files.py \
---ngis_referral_id r30000000001 \
---output_file genomic_files.json \
---pretty_print \
+cgpclient/scripts/list_files \
+--referral_id r30000000001 \
 --api_host internal-dev.api.service.nhs.uk \
 --api_name genomic-data-access \
 --api_key $API_KEY \
@@ -65,6 +47,6 @@ The output format is the same for both approaches.
 If you use a configuration file in the default location `~/.cgpclient/config.yaml` with appropriate arguments set, this command can be simplified to:
 
 ```bash
-python cgpclient/scripts/fetch_genomic_files.py -r r30000000001
+cgpclient/scripts/list_files -r r30000000001
 ```
 --8<-- "includes/abbreviations.md"

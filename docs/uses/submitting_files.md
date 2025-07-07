@@ -16,7 +16,7 @@ demultiplexing with the Dragen software.
 
 ## Example data flow
 
-Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_fastq_list.py` script.
+Uploading FASTQ Files after demultiplexing with Dragen using the `upload_dragen_run` script.
 
 ### 1. Configure CGP Client 
 
@@ -24,7 +24,7 @@ You will first need to configure your cgpclient, the following is the basic conf
  
 ``` yaml
 
-debug: true
+verbose: true
 output_dir: /tmp/output
 api_host: XXXXXX # will be shared
 override_api_base_url: true # needed when testing in non-live environments
@@ -51,11 +51,11 @@ details on the `fastq_list.csv` file.
 
 ### 3. Upload FASTQ Files
 
-Use the `upload_dragen_fastq_list.py` script with the following command:
+Use the `upload_dragen_run` script with the following command:
 
 ``` python
 
-python cgpclient/scripts/upload_dragen_fastq_list.py
+cgpclient/scripts/upload_dragen_run
 --sample_id {someid} 
 --fastq_list {path to fastq list csv file from Dragen} 
 --participant_id {NGIS participant ID} 

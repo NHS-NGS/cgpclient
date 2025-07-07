@@ -14,19 +14,18 @@ The configuration file should contain parameters with the same names as the comm
 api_host: sandbox.api.service.nhs.uk
 api_name: genomic-data-access
 api_key: NHSAPIMAPIKEY # This is the API key from the NHS Developer Hub (not needed for sandbox).
-private_key_pem_file: /absolute/path/to/test-1.pem # Path to your private key (see: [https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication#step-2-generate-a-key-pair](https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication#step-2-generate-a-key-pair)).
+private_key_pem: /absolute/path/to/test-1.pem # Path to your private key (see: [https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication#step-2-generate-a-key-pair](https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication#step-2-generate-a-key-pair)).
 apim_kid: test-1 # The key pair KID.
 output_dir: /tmp/output
 verbose: true
-pretty_print: true
 ```
 
 **Using the Configuration File:**
 
-With this configuration file, you can run the `cgpclient/scripts/fetch_genomic_files.py` script by supplying only the referral ID:
+With this configuration file, you can run the `cgpclient/scripts/list_files` script by supplying only the referral ID:
 
 ``` bash
-python cgpclient/scripts/fetch_genomic_files.py -r r30000000001
+cgpclient/scripts/list_files -r r30000000001
 ```
 
 --8<-- "includes/abbreviations.md"
