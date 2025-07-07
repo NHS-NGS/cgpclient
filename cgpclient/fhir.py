@@ -168,7 +168,7 @@ class CGPFHIRService:
             raise CGPClientException("Need explicit resource type")
 
         url = f"{self.base_url}/{resource_type}/{resource_id}"
-        logging.info("Requesting endpoint: %s", url)
+        log.info("Requesting endpoint: %s", url)
         response = requests.get(
             url=url,
             headers=self.headers,
@@ -199,8 +199,8 @@ class CGPFHIRService:
         if self.config.workspace_id is not None:
             query_params["_tag"] = self.config.workspace_id
 
-        logging.info("Requesting endpoint: %s", url)
-        logging.info("Query parameters: %s", query_params)
+        log.info("Requesting endpoint: %s", url)
+        log.info("Query parameters: %s", query_params)
 
         response = requests.get(
             url=url,
@@ -209,7 +209,7 @@ class CGPFHIRService:
             timeout=REQUEST_TIMEOUT_SECS,
         )
         if response.ok:
-            logging.debug(response.json())
+            log.debug(response.json())
             bundle = Bundle.parse_obj(response.json())
             if (
                 bundle.link
@@ -217,13 +217,13 @@ class CGPFHIRService:
                 and bundle.link[0].relation == "next"
             ):
                 url = bundle.link[0].url
-                logging.info(
+                log.info(
                     "More than %i results for search, implement paging!",
                     MAX_SEARCH_RESULTS,
                 )
             return bundle
 
-        logging.error(
+        log.error(
             "Failed to fetch from endpoint: %s status: %i response: %s",
             url,
             response.status_code,
@@ -374,7 +374,7 @@ class CGPFHIRService:
             if resource.meta.tag is None:
                 resource.meta.tag = []
 
-            logging.debug(
+            log.debug(
                 "Adding workspace ID %s to resource meta tags",
                 self.config.workspace_id,
             )
@@ -397,27 +397,27 @@ class CGPFHIRService:
             BundleType.TRANSACTION,
         ):
             # these bundle types are posted to the root of the FHIR server
-            logging.info("Posting bundle to the root FHIR endpoint")
+            log.info("Posting bundle to the root FHIR endpoint")
             url = f"{fhir_base_url(self.api_base_url)}/"
             if self.config.org_reference is not None:
                 resource = add_provenance_for_bundle(
                     bundle=resource, org_reference=self.config.org_reference
                 )
             self.add_workspace_meta_tag_to_bundle(bundle=resource)
-            logging.info("Posting bundle including %i entries", len(resource.entry))
+            log.info("Posting bundle including %i entries", len(resource.entry))
 
         self.add_workspace_meta_tag(resource=resource)
 
-        logging.info("Posting resource to endpoint: %s", url)
+        log.info("Posting resource to endpoint: %s", url)
 
         if self.output_dir is not None:
             output_file: Path = self.output_dir / Path("fhir_resources.json")
-            logging.info("Writing FHIR resource to %s", output_file)
+            log.info("Writing FHIR resource to %s", output_file)
             with open(output_file, "a", encoding="utf-8") as out:
                 print(resource.json(exclude_none=True), file=out)
 
         if self.dry_run:
-            logging.info("Dry run, so skipping posting resource")
+            log.info("Dry run, so skipping posting resource")
             return
 
         response: requests.Response = requests.post(
@@ -428,9 +428,9 @@ class CGPFHIRService:
             timeout=REQUEST_TIMEOUT_SECS,
         )
         if response.ok:
-            logging.info("Successfully posted FHIR resource")
+            log.info("Successfully posted FHIR resource")
         else:
-            logging.error(
+            log.error(
                 "Failed to post resource to: %s status: %i response: %s",
                 url,
                 response.status_code,

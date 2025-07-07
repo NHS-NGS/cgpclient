@@ -312,13 +312,13 @@ def get_drs_object(
     headers: dict,
     expected_hash: str | None = None,
 ) -> DrsObject:
-    logging.info("Fetching DRS object from URL: %s", drs_url)
+    log.info("Fetching DRS object from URL: %s", drs_url)
     https_url: str = _resolve_drs_url_to_https(
         drs_url=drs_url,
         api_base_url=api_base_url,
         override_api_base_url=override_api_base_url,
     )
-    logging.info("Resolved DRS URL to: %s", https_url)
+    log.info("Resolved DRS URL to: %s", https_url)
     drs_object: DrsObject = _get_drs_object_from_https_url(
         https_url=https_url, headers=headers
     )
@@ -342,17 +342,17 @@ def post_drs_object(
     output_dir: Path | None = None,
 ) -> None:
     endpoint: str = f"{drs_base_url(api_base_url)}/objects"
-    logging.info("Posting DRS object: %s", drs_object.id)
-    logging.debug(drs_object.model_dump_json(exclude_defaults=True))
+    log.info("Posting DRS object: %s", drs_object.id)
+    log.debug(drs_object.model_dump_json(exclude_defaults=True))
 
     if output_dir is not None:
         output_file: Path = output_dir / Path("drs_objects.json")
-        logging.info("Writing DRS object to %s", output_file)
+        log.info("Writing DRS object to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(drs_object.model_dump_json(), file=out)
 
     if dry_run:
-        logging.info("Dry run, so skipping posting DRS object")
+        log.info("Dry run, so skipping posting DRS object")
         return
 
     response: requests.Response = requests.post(

@@ -120,7 +120,7 @@ def fastq_list_entry_to_document_references(
 
 @typing.no_type_check
 def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
-    logging.info("Creating Specimen resource for germline blood sample")
+    log.info("Creating Specimen resource for germline blood sample")
 
     return Specimen(
         id=create_uuid(),
@@ -155,7 +155,7 @@ def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
 
 @typing.no_type_check
 def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
-    logging.info("Creating Specimen resource for tumour sample")
+    log.info("Creating Specimen resource for tumour sample")
 
     return Specimen(
         id=create_uuid(),
