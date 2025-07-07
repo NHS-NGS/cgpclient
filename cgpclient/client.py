@@ -397,7 +397,6 @@ class CGPReferral:
             bundle: Bundle = self._client.fhir_service.search_for_fhir_resource(
                 resource_type=RelatedPerson.get_resource_type(),
                 query_params={"patient:identifier": self.proband_participant_id},
-                client=self._client,
             )
 
             if bundle.entry is not None:
