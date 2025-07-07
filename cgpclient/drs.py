@@ -283,10 +283,12 @@ def _stream_data_from_https_url(
             return
 
     log.info("Streaming data from URL")
-    with requests.get(
-        url=https_url, stream=True, timeout=REQUEST_TIMEOUT_SECS
-    ) as response:
-        response.raise_for_status()
+
+    response = requests.get(url=https_url, stream=True, timeout=REQUEST_TIMEOUT_SECS)
+
+    response.raise_for_status()
+
+    if response.ok:
         num_chunks: int = 0
         with open(output, "wb") as out:
             for chunk in response.iter_content(chunk_size=CHUNK_SIZE_BYTES):

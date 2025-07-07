@@ -1,16 +1,13 @@
 # flake8: noqa: E501
 # pylint: disable=wrong-import-order, redefined-outer-name, ungrouped-imports, line-too-long, too-many-arguments, protected-access
 
-from pathlib import Path
+
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from cgpclient.auth import NHSOAuthToken, OAuthProvider
-from cgpclient.client import CGPClient, CGPFile, CGPFiles
-from cgpclient.drs import DrsObject
-from cgpclient.drsupload import AccessURL
-from cgpclient.fhir import DocumentReference, FHIRConfig  # type: ignore
+from cgpclient.client import CGPClient
+from cgpclient.fhir import CGPFHIRService, FHIRConfig  # type: ignore
 
 
 @pytest.fixture(scope="function")
@@ -182,6 +179,15 @@ def doc_ref_bundle(document_reference: dict) -> dict:
 
 
 @pytest.fixture(scope="function")
+def serv_req_bundle(service_request: dict) -> dict:
+    return {
+        "resourceType": "Bundle",
+        "type": "searchset",
+        "entry": [{"resource": service_request, "search": {"mode": "match"}}],
+    }
+
+
+@pytest.fixture(scope="function")
 def drs_object() -> dict:
     return {
         "id": "d6237181-65f8-474d-ba6b-a530b5678c38",
@@ -215,150 +221,81 @@ def client() -> CGPClient:
     return CGPClient(api_host="host")
 
 
-@patch("cgpclient.auth.time")
-@patch("requests.post")
-def test_get_oauth_token(mock_post: MagicMock, mock_time: MagicMock):
-    expires_in: int = 10
-    issued_at: int = 20
-    time_now: int = 20
-
+@patch("cgpclient.fhir.requests.get")
+def test_get_resource(mock_get: MagicMock, document_reference: dict) -> None:
     class MockedResponse:
         def ok(self):
             return True
 
         def json(self):
-            return {
-                "access_token": "token",
-                "expires_in": f"{expires_in}",
-                "issued_at": f"{issued_at}",
-                "token_type": "type",
-            }
-
-    mock_post.return_value = MockedResponse()
-    mock_time.return_value = time_now
-
-    provider = OAuthProvider("api_key", Path("fake_key.pem"), "kid")
-
-    with patch("cgpclient.auth.OAuthProvider._get_jwt", return_value="NOTAJWT"):
-        response: NHSOAuthToken = provider._get_oauth_token("host")
-        assert response.access_token == "token"
-
-
-def test_get_headers() -> None:
-    client: CGPClient = CGPClient(api_host="api.service.nhs.uk", api_key="secret")
-    assert "apikey" in client.headers
-    assert client.headers["apikey"] == "secret"
-
-    with patch("cgpclient.auth.OAuthProvider._get_access_token", return_value="token"):
-        client = CGPClient(
-            api_host="host",
-            api_key="secret",
-            private_key_pem=Path("pem"),
-            apim_kid="kid",
-        )
-        assert "Authorization" in client.headers
-        assert client.headers["Authorization"] == "Bearer token"
-
-
-@patch("cgpclient.fhir.CGPFHIRService.search_for_document_references")
-def test_list_files(mock_search: MagicMock, document_reference: dict, tmp_path) -> None:
-    client: CGPClient = CGPClient(api_host="host", api_key="key")
-    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
-    files: CGPFiles = client.get_files()
-    assert len(files) == 1
-    file: CGPFile = files[0]
-    assert file.participant_id == document_reference["subject"]["identifier"]["value"]
-    output: Path = tmp_path / "out.txt"
-    files.print_table(output=output.open(mode="w"))
-    with open(output, encoding="utf-8") as out:
-        lines = out.read().splitlines()
-        assert len(lines) == 2
-
-
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.fhir.CGPFHIRService.post_fhir_resource")
-def test_upload_file(
-    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict
-) -> None:
-    config: FHIRConfig = FHIRConfig(ods_code="ODS", participant_id="p123")
-    client: CGPClient = CGPClient(api_host="host", api_key="key", fhir_config=config)
-    mock_drs_upload.return_value = [DrsObject.model_validate(drs_object)]
-    mock_post.return_value = None
-    client.upload_files(filenames=[Path("foo.csv")])
-    mock_drs_upload.assert_called_once()
-    mock_post.assert_called_once()
-
-
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.fhir.CGPFHIRService.post_fhir_resource")
-def test_upload_dragen(
-    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict, tmp_path
-) -> None:
-    config: FHIRConfig = FHIRConfig(
-        ods_code="ODS",
-        participant_id="p123",
-        sample_id="s123",
-        referral_id="r123",
-        run_id="run123",
-    )
-    client: CGPClient = CGPClient(api_host="host", api_key="key", fhir_config=config)
-    drs_obj: DrsObject = DrsObject.model_validate(drs_object)
-    mock_drs_upload.return_value = [drs_obj, drs_obj]
-    mock_post.return_value = None
-    fastq_list: Path = tmp_path / "list.csv"
-    with open(fastq_list, "w", encoding="utf-8") as o:
-        o.write("RGID,RGSM,RGLB,Lane,Read1File,Read2File\n")
-        o.write("rgid,s123,rglb,1,file1.fastq.gz,file2.fastq.gz\n")
-    client.upload_dragen_run(fastq_list_csv=fastq_list)
-    mock_drs_upload.assert_called_once()
-    mock_post.assert_called_once()
-
-
-@patch("cgpclient.drs.md5sum")
-@patch("cgpclient.client.get_drs_object")
-@patch("cgpclient.fhir.CGPFHIRService.search_for_document_references")
-@patch("cgpclient.drs.requests.get")
-def test_download_file(
-    mock_get: MagicMock,
-    mock_search: MagicMock,
-    mock_get_drs: MagicMock,
-    mock_md5: MagicMock,
-    document_reference: dict,
-    drs_object: dict,
-    tmp_path,
-) -> None:
-    # this is dodgy! there are 2 calls to requests.get, one uses json and the
-    # other iter_content so we can use the same mock for both
-    class MockedResponse:
-        def ok(self):
-            return True
-
-        def json(self):
-            # get for presigned URL
-            return AccessURL(url="https://not-a-url", headers=[]).model_dump()
-
-        def raise_for_status(self):
-            pass
-
-        def iter_content(self, chunk_size: int):
-            # get of actual data from presigned URL
-            assert chunk_size > 0
-            return [b"data"]
+            return document_reference
 
     mock_get.return_value = MockedResponse()
-    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
-    mock_get_drs.return_value = DrsObject.model_validate(drs_object)
-    mock_md5.return_value = "NOTAHASH"
 
-    config: FHIRConfig = FHIRConfig(
-        ods_code="ODS",
-        participant_id="p123",
-        sample_id="s123",
-        referral_id="r123",
-        run_id="run123",
+    config: FHIRConfig = FHIRConfig()
+
+    fhir: CGPFHIRService = CGPFHIRService(
+        api_base_url="host", headers={}, config=config, dry_run=False
     )
-    client: CGPClient = CGPClient(api_host="host", api_key="key", fhir_config=config)
-    out: Path = tmp_path / Path("out.txt")
-    client.download_file(output=out)
-    with open(out, encoding="utf-8") as outfile:
-        assert outfile.read() == "data"
+    resource = fhir.get_resource(resource_id="foo", resource_type="DocumentReference")
+    assert resource.resource_type == "DocumentReference"
+
+
+@patch("cgpclient.fhir.requests.get")
+def test_search_resource(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
+    class MockedResponse:
+        def ok(self):
+            return True
+
+        def json(self):
+            return doc_ref_bundle
+
+    mock_get.return_value = MockedResponse()
+
+    config: FHIRConfig = FHIRConfig()
+
+    fhir: CGPFHIRService = CGPFHIRService(
+        api_base_url="host", headers={}, config=config, dry_run=False
+    )
+    resource = fhir.search_for_fhir_resource(resource_type="DocumentReference")
+    assert resource.entry and len(resource.entry) == 1
+
+
+@patch("cgpclient.fhir.requests.get")
+def test_search_doc_refs(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
+    class MockedResponse:
+        def ok(self):
+            return True
+
+        def json(self):
+            return doc_ref_bundle
+
+    mock_get.return_value = MockedResponse()
+
+    config: FHIRConfig = FHIRConfig()
+
+    fhir: CGPFHIRService = CGPFHIRService(
+        api_base_url="host", headers={}, config=config, dry_run=False
+    )
+    doc_refs = fhir.search_for_document_references()
+    assert len(doc_refs) == 1
+
+
+@patch("cgpclient.fhir.requests.get")
+def test_search_serv_reqs(mock_get: MagicMock, serv_req_bundle: dict) -> None:
+    class MockedResponse:
+        def ok(self):
+            return True
+
+        def json(self):
+            return serv_req_bundle
+
+    mock_get.return_value = MockedResponse()
+
+    config: FHIRConfig = FHIRConfig()
+
+    fhir: CGPFHIRService = CGPFHIRService(
+        api_base_url="host", headers={}, config=config, dry_run=False
+    )
+    serv_reqs = fhir.search_for_service_requests()
+    assert len(serv_reqs) == 1

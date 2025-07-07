@@ -6,12 +6,15 @@ import typing
 from pathlib import Path
 
 from fhir.resources.R4B.bundle import Bundle
+from fhir.resources.R4B.codeableconcept import CodeableConcept
+from fhir.resources.R4B.coding import Coding
 from fhir.resources.R4B.composition import Composition
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
     DocumentReferenceRelatesTo,
 )
-from fhir.resources.R4B.procedure import Procedure
+from fhir.resources.R4B.extension import Extension
+from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
@@ -21,9 +24,10 @@ from cgpclient.fhir import (  # type: ignore
     FHIRConfig,
     ProcedureStatus,
     bundle_for,
+    create_composition,
     reference_for,
 )
-from cgpclient.utils import CGPClientException
+from cgpclient.utils import CGPClientException, create_uuid
 
 log = logging.getLogger(__name__)
 
@@ -236,7 +240,7 @@ def map_entries_to_bundle(
         specimen=specimen,
         procedure=procedure,
         document_references=document_references,
-        client=client,
+        fhir_config=fhir_service.config,
     )
 
     return bundle_for([composition, specimen, procedure] + document_references)
@@ -262,4 +266,4 @@ def upload_dragen_run(
         entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
 
-    fhir_service.post_fhir_resource(resource=bundle)
+    fhir_service.post_fhir_resource(resource=bundle)  # type: ignore

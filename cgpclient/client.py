@@ -1,9 +1,12 @@
 # pylint: disable=not-an-iterable,unsubscriptable-object
 from __future__ import annotations
 
+import logging
+import sys
 import typing
 from functools import cache
 from pathlib import Path
+from typing import TextIO
 
 from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle
@@ -19,9 +22,10 @@ from tabulate import tabulate  # type: ignore
 from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object, map_https_to_drs_url
-from cgpclient.drsupload import upload_files_with_drs
-from cgpclient.fhir import CGPFHIRService, CGPServiceRequest, FHIRConfig  # type: ignore
+from cgpclient.fhir import CGPFHIRService, FHIRConfig, PedigreeRole  # type: ignore
 from cgpclient.utils import CGPClientException, create_uuid
+
+log = logging.getLogger(__name__)
 
 
 class CGPFile:
@@ -36,8 +40,8 @@ class CGPFile:
         document_reference: DocumentReference,
         client: CGPClient,
     ) -> None:
-        self._document_reference = document_reference
         self._client = client
+        self._document_reference = document_reference
         self._drs_object = None
         self._referral = None
 
@@ -48,7 +52,9 @@ class CGPFile:
             self._drs_object = get_drs_object(
                 drs_url=self.drs_url,
                 expected_hash=self.hash,
-                client=self._client,
+                headers=self._client.headers,
+                api_base_url=self._client.api_base_url,
+                override_api_base_url=self._client.override_api_base_url,
             )
 
         return self._drs_object
@@ -192,29 +198,25 @@ class CGPFile:
         force_overwrite: bool = False,
     ) -> None:
         """Download the DRS object data attached to the DocumentReference"""
-        self._drs_object.download_data(
+        self.drs_object.download_data(
             output=output,
             force_overwrite=force_overwrite,
             expected_hash=self.hash,
-            client=self._client,
+            headers=self._client.headers,
+            api_base_url=self._client.api_base_url,
         )
 
 
 class CGPFiles:
-    def __init__(self, document_references: list[DocumentReference], client: CGPClient):
+    def __init__(
+        self,
+        document_references: list[DocumentReference],
+        client: CGPClient,
+    ):
         self._files = [
             CGPFile(document_reference=doc_ref, client=client)
             for doc_ref in document_references
         ]
-
-    @classmethod
-    def search(cls, client: CGPClient) -> CGPFiles:
-        return CGPFiles(
-            document_references=search_for_document_references(
-                client=client, search_params=client.config
-            ),
-            client=client,
-        )
 
     def __len__(self) -> int:
         return len(self._files)
@@ -231,6 +233,8 @@ class CGPFiles:
         pivot: bool = False,
         mime_type: str | None = None,
         include_header: bool = True,
+        output: TextIO = sys.stdout,
+        include_pedigree_roles: bool = False,
     ) -> None:
         """Print the list of files as a table"""
 
@@ -250,7 +254,6 @@ class CGPFiles:
             "author_ods_code",
             "referral_id",
             "participant_id",
-            "participant_role",
             "sample_id",
             "run_id",
             "name",
@@ -263,6 +266,9 @@ class CGPFiles:
 
         if include_drs_access_urls:
             cols.extend(["s3_url", "htsget_url"])
+
+        if include_pedigree_roles:
+            cols.insert(6, "pedigree_role")
 
         def try_getattr(o, name, default=""):
             try:
@@ -282,15 +288,16 @@ class CGPFiles:
                         tablefmt=table_format,
                     ),
                     end="\n\n",
+                    file=output,
                 )
-
         else:
             print(
                 tabulate(
                     rows,
                     headers=cols if include_header else (),
                     tablefmt=table_format,
-                )
+                ),
+                file=output,
             )
 
 
@@ -342,15 +349,17 @@ class CGPReferral:
     @classmethod
     @cache
     def get(cls, referral_id: str, client: CGPClient) -> CGPReferral:
-        referrals: CGPReferrals = CGPReferrals.search(
-            search_params=ClientConfig(referral_id=referral_id), client=client
+        service_requests: list[ServiceRequest] = (
+            client.fhir_service.search_for_service_requests(
+                search_params=FHIRConfig(referral_id=referral_id)
+            )
         )
-        if len(referrals) == 0:
+        if len(service_requests) == 0:
             raise CGPClientException(f"No ServiceRequest for referral ID {referral_id}")
-        if len(referrals) != 1:
-            log.info(CGPClientException("Expected a single matching Referral"))
+        if len(service_requests) != 1:
+            log.info(CGPClientException("Expected a single matching ServiceRequest"))
 
-        return referrals[0]
+        return CGPReferral(service_request=service_requests[0], client=client)
 
     @typing.no_type_check
     def _get_identifier(self, system: str) -> str | None:
@@ -385,7 +394,7 @@ class CGPReferral:
         if self._pedigree is None:
             self._pedigree = {self.proband_participant_id: PedigreeRole.PROBAND}
 
-            bundle: Bundle = search_for_fhir_resource(
+            bundle: Bundle = self._client.fhir_service.search_for_fhir_resource(
                 resource_type=RelatedPerson.get_resource_type(),
                 query_params={"patient:identifier": self.proband_participant_id},
                 client=self._client,
@@ -414,6 +423,16 @@ class CGPReferral:
 
 class CGPReferrals:
     referrals: list[CGPReferral]
+
+    def __init__(
+        self,
+        service_requests: list[ServiceRequest],
+        client: CGPClient,
+    ):
+        self._referrals = [
+            CGPReferral(service_request=serv_req, client=client)
+            for serv_req in service_requests
+        ]
 
 
 class CGPClient:
@@ -476,39 +495,14 @@ class CGPClient:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
         return self.auth_provider.get_headers(self.api_host)
 
-    # FHIR Service delegation
-    def get_service_request(self, referral_id: str) -> CGPServiceRequest:
-        """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
-        return self.fhir_service.get_service_request(referral_id=referral_id)
-
-    def get_patient(self, participant_id: str) -> Patient:
-        """Fetch a FHIR Patient resource for the given NGIS participant ID"""
-        return self.fhir_service.get_patient(participant_id=participant_id)
-
     @typing.no_type_check
     def download_file(
         self,
-        document_reference_id: str | None = None,
         output: Path | None = None,
         force_overwrite: bool = False,
     ) -> None:
         """Download the specified file"""
-        matches: CGPFiles
-
-        if document_reference_id is not None:
-            # just use the given DocRef ID
-            matches = CGPFiles(
-                document_references=self.fhir_service.get_resource(
-                    resource_id=document_reference_id
-                )
-            )
-        else:
-            # search for matching files
-            matches = CGPFiles(
-                document_references=self.fhir_service.search_for_document_references(
-                    client=self, search_params=self.config
-                )
-            )
+        matches: CGPFiles = self.get_files()
 
         if len(matches) == 0:
             raise CGPClientException("Could not find matching file(s)")
@@ -522,24 +516,18 @@ class CGPClient:
 
     def get_referrals(self) -> CGPReferrals:
         return CGPReferrals(
-            service_requests=self.fhir_service.search_for_service_requests(client=self),
+            service_requests=self.fhir_service.search_for_service_requests(
+                search_params=self.fhir_config
+            ),
             client=self,
         )
 
     def get_files(self) -> CGPFiles:
-        return CGPFiles.search(client=self)
-
-    def upload_files_with_drs(
-        self,
-        filename: Path,
-    ) -> list[DrsObject]:
-        """Upload a file using the DRS upload protocol"""
-        return upload_files_with_drs(
-            filenames=[filename],
-            headers=self.headers,
-            api_base_url=self.api_base_url,
-            dry_run=self.dry_run,
-            output_dir=self.output_dir,
+        return CGPFiles(
+            document_references=self.fhir_service.search_for_document_references(
+                search_params=self.fhir_config
+            ),
+            client=self,
         )
 
     def upload_files(self, filenames: list[Path]) -> None:

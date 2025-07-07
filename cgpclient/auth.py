@@ -7,7 +7,7 @@ from time import time
 from typing import Protocol
 
 import jwt
-import requests
+import requests  # type: ignore
 from pydantic import BaseModel
 
 from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException

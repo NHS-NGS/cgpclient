@@ -7,6 +7,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient, CGPFiles
+from cgpclient.fhir import FHIRConfig  # type: ignore
 from cgpclient.utils import setup_logger
 
 
@@ -68,6 +69,15 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help=(
             "Fetch the access URLs from DRS for each file, "
+            "using this option will slow down retrieval"
+        ),
+    )
+    parser.add_argument(
+        "-ped",
+        "--include_pedigree_roles",
+        action="store_true",
+        help=(
+            "Fetch the pedigree roles for the participant of each file, "
             "using this option will slow down retrieval"
         ),
     )
@@ -174,7 +184,7 @@ def main(cmdline_args: list[str]) -> None:
 
     setup_logger(verbose=args.verbose, debug=args.debug)
 
-    config: ClientConfig = ClientConfig(
+    config: FHIRConfig = FHIRConfig(
         ods_code=args.ods_code,
         referral_id=args.referral_id,
         participant_id=args.participant_id,
@@ -202,6 +212,8 @@ def main(cmdline_args: list[str]) -> None:
         include_drs_access_urls=args.include_drs_access_urls,
         pivot=args.pivot,
         mime_type=args.mime_type,
+        include_pedigree_roles=args.include_pedigree_roles,
+        include_header=True,
     )
 
 
