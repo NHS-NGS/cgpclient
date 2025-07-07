@@ -237,10 +237,15 @@ def test_get_oauth_token(mock_post: MagicMock, mock_time: MagicMock):
     mock_post.return_value = MockedResponse()
     mock_time.return_value = time_now
 
-    provider = OAuthProvider("api_key", Path("fake_key.pem"), "kid")
+    provider = OAuthProvider(
+        api_key="api_key",
+        private_key_pem=Path("fake_key.pem"),
+        apim_kid="kid",
+        api_host="host",
+    )
 
     with patch("cgpclient.auth.OAuthProvider._get_jwt", return_value="NOTAJWT"):
-        response: NHSOAuthToken = provider._get_oauth_token("host")
+        response: NHSOAuthToken = provider._get_oauth_token()
         assert response.access_token == "token"
 
 
@@ -249,7 +254,7 @@ def test_get_headers() -> None:
     assert "apikey" in client.headers
     assert client.headers["apikey"] == "secret"
 
-    with patch("cgpclient.auth.OAuthProvider._get_access_token", return_value="token"):
+    with patch("cgpclient.auth.OAuthProvider.get_access_token", return_value="token"):
         client = CGPClient(
             api_host="host",
             api_key="secret",

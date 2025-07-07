@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
 import yaml  # type: ignore
 
-from cgpclient.client import CGPClient
+from cgpclient.auth import OAuthProvider
+from cgpclient.utils import setup_logger
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
@@ -92,20 +92,16 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 def main(cmdline_args: list[str]) -> str | None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
-    if args.debug:
-        logging.getLogger(__name__).setLevel(logging.DEBUG)
-    elif args.verbose:
-        logging.getLogger(__name__).setLevel(logging.INFO)
+    setup_logger(verbose=args.verbose, debug=args.debug)
 
-    client: CGPClient = CGPClient(
-        api_host=args.api_host,
-        api_name=args.api_name,
+    oauth: OAuthProvider = OAuthProvider(
         api_key=args.api_key,
-        private_key_pem=args.private_key_pem_file,
+        private_key_pem=args.private_key_pem,
         apim_kid=args.apim_kid,
+        api_host=args.api_host,
     )
 
-    return client.get_access_token()
+    return oauth.get_access_token()
 
 
 if __name__ == "__main__":

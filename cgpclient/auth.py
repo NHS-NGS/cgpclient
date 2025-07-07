@@ -23,7 +23,7 @@ class NHSOAuthToken(BaseModel):
 class AuthProvider(Protocol):
     """Protocol for authentication providers"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         """Return HTTP headers for authentication"""
         ...
 
@@ -31,7 +31,7 @@ class AuthProvider(Protocol):
 class NoAuthProvider:
     """No authentication provider for sandbox environments"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         logging.debug("No API authentication")
         return {}
 
@@ -39,12 +39,13 @@ class NoAuthProvider:
 class APIKeyAuthProvider:
     """API key authentication provider"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, api_host: str):
         self.api_key = api_key
+        self.api_host = api_host
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         logging.debug("Using API key authentication")
-        if APIM_BASE_URL in api_host:
+        if APIM_BASE_URL in self.api_host:
             logging.debug("Using APIM API key header")
             return {"apikey": self.api_key}
 
@@ -55,23 +56,26 @@ class APIKeyAuthProvider:
 class OAuthProvider:
     """OAuth JWT authentication provider for NHS APIM"""
 
-    def __init__(self, api_key: str, private_key_pem: Path, apim_kid: str):
+    def __init__(
+        self, api_key: str, private_key_pem: Path, apim_kid: str, api_host: str
+    ):
         self.api_key = api_key
         self.private_key_pem = private_key_pem
         self.apim_kid = apim_kid
+        self.api_host = api_host
         self._oauth_token: NHSOAuthToken | None = None
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         logging.debug("Using signed JWT authentication")
-        return {"Authorization": f"Bearer {self._get_access_token(api_host)}"}
+        return {"Authorization": f"Bearer {self.get_access_token()}"}
 
-    def _get_access_token(self, api_host: str) -> str:
-        return self._get_oauth_token(api_host).access_token
+    def get_access_token(self) -> str:
+        return self._get_oauth_token().access_token
 
-    def _get_oauth_token(self, api_host: str) -> NHSOAuthToken:
+    def _get_oauth_token(self) -> NHSOAuthToken:
         if self._oauth_token is None or self._is_token_expired():
             logging.info("Requesting new OAuth token")
-            self._oauth_token = self._request_access_token(api_host)
+            self._oauth_token = self._request_access_token()
         return self._oauth_token
 
     def _is_token_expired(self) -> bool:
@@ -81,7 +85,9 @@ class OAuthProvider:
             self._oauth_token.expires_in
         )
 
-    def _request_access_token(self, api_host: str) -> NHSOAuthToken:
+    def _request_access_token(self, api_host: str | None = None) -> NHSOAuthToken:
+        if api_host is None:
+            api_host = self.api_host
         oauth_endpoint = f"https://{api_host}/oauth2/token"
         logging.info("Requesting OAuth token from: %s", oauth_endpoint)
 
@@ -135,7 +141,7 @@ class OAuthProvider:
 class SandboxAuthProvider:
     """Authentication provider for sandbox environments"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         logging.debug("Skipping authentication for sandbox environment")
         return {}
 
@@ -152,9 +158,9 @@ def create_auth_provider(
         return SandboxAuthProvider()
 
     if private_key_pem is not None and apim_kid is not None and api_key is not None:
-        return OAuthProvider(api_key, private_key_pem, apim_kid)
+        return OAuthProvider(api_key, private_key_pem, apim_kid, api_host)
 
     if api_key is not None:
-        return APIKeyAuthProvider(api_key)
+        return APIKeyAuthProvider(api_key, api_host)
 
     return NoAuthProvider()

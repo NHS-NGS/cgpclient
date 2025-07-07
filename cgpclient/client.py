@@ -493,7 +493,7 @@ class CGPClient:
     @property
     def headers(self) -> dict[str, str]:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
-        return self.auth_provider.get_headers(self.api_host)
+        return self.auth_provider.get_headers()
 
     @typing.no_type_check
     def download_file(
