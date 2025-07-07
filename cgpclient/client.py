@@ -287,7 +287,13 @@ class CGPFiles:
         if include_drs_access_urls:
             cols.extend(["s3_url", "htsget_url"])
 
-        rows: list[list[str]] = [[getattr(f, c) for c in cols] for f in files]
+        def try_getattr(o, name, default=""):
+            try:
+                return getattr(o, name)
+            except CGPClientException:
+                return default
+
+        rows: list[list[str]] = [[try_getattr(f, c, "") for c in cols] for f in files]
 
         if pivot:
             # print each row as its own table
@@ -362,7 +368,9 @@ class CGPReferral:
         referrals: CGPReferrals = CGPReferrals.search(
             search_params=ClientConfig(referral_id=referral_id), client=client
         )
-        if len(referrals) != 0:
+        if len(referrals) == 0:
+            raise CGPClientException(f"No ServiceRequest for referral ID {referral_id}")
+        if len(referrals) != 1:
             log.info(CGPClientException("Expected a single matching Referral"))
 
         return referrals[0]
@@ -402,7 +410,7 @@ class CGPReferral:
 
             bundle: Bundle = search_for_fhir_resource(
                 resource_type=RelatedPerson.get_resource_type(),
-                query_params={"patient": self.proband_participant_id},
+                query_params={"patient:identifier": self.proband_participant_id},
                 client=self._client,
             )
 
