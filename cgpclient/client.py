@@ -128,8 +128,20 @@ class CGPFile:
         raise CGPClientException("No DRS URL for DocumentReference")
 
     @property
+    @typing.no_type_check
     def name(self) -> str | None:
-        return self.attachment.title
+        if self.attachment.title:
+            return self.attachment.title
+        if self._document_reference.identifier:
+            # if the attachment doesn't have a name then see if
+            # we have a GEL WEKA path as an ID and use that instead
+            for identifier in self._document_reference.identifier:
+                if (
+                    identifier.system
+                    == "https://genomicsengland.co.uk/ngis-weka-file-path"
+                ):
+                    return Path(identifier.value).name
+        return None
 
     @property
     def content_type(self) -> str | None:
