@@ -5,14 +5,21 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fhir.resources.R4B.documentreference import DocumentReference
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
-from cgpclient.client import CGPClient, CGPClientException, NHSOAuthToken
+from cgpclient.client import (
+    CGPClient,
+    CGPClientException,
+    CGPFile,
+    CGPFiles,
+    NHSOAuthToken,
+)
 from cgpclient.drs import (
     DrsObject,
     _get_drs_object_from_https_url,
-    _map_drs_to_https_url,
     get_drs_object,
+    map_drs_to_https_url,
 )
 from cgpclient.drsupload import (
     AccessURL,
@@ -28,6 +35,7 @@ from cgpclient.drsupload import (
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
     CGPServiceRequest,
+    ClientConfig,
     get_service_request,
 )
 from cgpclient.utils import create_uuid
@@ -124,6 +132,7 @@ def sr_bundle(service_request: dict) -> dict:
 def document_reference() -> dict:
     return {
         "resourceType": "DocumentReference",
+        "meta": {"lastUpdated": "2025-07-06T13:09:10Z"},
         "id": "90844498-09d3-4f02-a871-03197c752ad2",
         "status": "current",
         "docStatus": "final",
@@ -207,6 +216,7 @@ def drs_object() -> dict:
         "self_uri": "drs://api.service.nhs.uk/genomic-data-access/d6237181-65f8-474d-ba6b-a530b5678c38",
         "size": 1351,
         "mime_type": "application/cram",
+        "name": "reads.cram",
         "checksums": [{"type": "md5", "checksum": "0556530eb3d73a27581ce7b2ca4dc3e7"}],
         "created_time": "2024-04-12T23:20:50.52Z",
         "access_methods": [
@@ -347,7 +357,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 @patch("cgpclient.drsupload._request_upload")
 @patch("cgpclient.drsupload._upload_file_to_s3")
 @patch("cgpclient.drsupload.post_drs_object")
-def test_upload_file(
+def test_drs_upload_file(
     mock_post_object: MagicMock,
     mock_s3_upload: MagicMock,
     mock_request_upload: MagicMock,
@@ -494,23 +504,23 @@ def test_map_drs_to_https_url() -> None:
     object_id: str = "1234"
     drs_url: str = f"drs://api.service.nhs.uk/genomic-data-access/{object_id}"
     https_url: str = f"https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/{object_id}"
-    assert _map_drs_to_https_url(drs_url) == https_url
+    assert map_drs_to_https_url(drs_url) == https_url
 
     with pytest.raises(CGPClientException):
-        _map_drs_to_https_url(
+        map_drs_to_https_url(
             f"drs://api.service.nhs.uk/unexpected/genomic-data-access/{object_id}"
         )
 
     with pytest.raises(CGPClientException):
-        _map_drs_to_https_url(f"drs://api.service.nhs.uk/{object_id}")
+        map_drs_to_https_url(f"drs://api.service.nhs.uk/{object_id}")
 
     with pytest.raises(CGPClientException):
-        _map_drs_to_https_url(
+        map_drs_to_https_url(
             f"drs://api.service.nhs.uk/ga4gh/drs/v1.4/objects/{object_id}"
         )
 
     with pytest.raises(CGPClientException):
-        _map_drs_to_https_url(f"drs://{object_id}")
+        map_drs_to_https_url(f"drs://{object_id}")
 
 
 @patch("cgpclient.client.time")
@@ -596,3 +606,66 @@ def test_get_headers(mock_token: MagicMock) -> None:
         apim_kid="kid",
     )
     assert "Authorization" in client.headers
+
+
+@patch("cgpclient.client.search_for_document_references")
+def test_list_files(mock_search: MagicMock, document_reference: dict) -> None:
+    client: CGPClient = CGPClient(api_host="host", api_key="key")
+    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
+    files: CGPFiles = client.get_files()
+    assert len(files) == 1
+    file: CGPFile = files[0]
+    assert file.participant_id == document_reference["subject"]["identifier"]["value"]
+
+
+@patch("cgpclient.fhir.upload_files_with_drs")
+@patch("cgpclient.fhir.post_fhir_resource")
+def test_upload_file(
+    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict
+) -> None:
+    config: ClientConfig = ClientConfig(ods_code="ODS", participant_id="p123")
+    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
+    mock_drs_upload.return_value = [DrsObject.model_validate(drs_object)]
+    mock_post.return_value = None
+    client.upload_files(filenames=[Path("foo.csv")])
+    mock_drs_upload.assert_called_once()
+    mock_post.assert_called_once()
+
+
+@patch("cgpclient.fhir.upload_files_with_drs")
+@patch("cgpclient.dragen.post_fhir_resource")
+def test_upload_dragen(
+    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict, tmp_path
+) -> None:
+    config: ClientConfig = ClientConfig(
+        ods_code="ODS",
+        participant_id="p123",
+        sample_id="s123",
+        referral_id="r123",
+        run_id="run123",
+    )
+    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
+    drs_obj: DrsObject = DrsObject.model_validate(drs_object)
+    mock_drs_upload.return_value = [drs_obj, drs_obj]
+    mock_post.return_value = None
+    fastq_list: Path = tmp_path / "list.csv"
+    with open(fastq_list, "w", encoding="utf-8") as o:
+        o.write("RGID,RGSM,RGLB,Lane,Read1File,Read2File\n")
+        o.write("rgid,s123,rglb,1,file1.fastq.gz,file2.fastq.gz\n")
+    client.upload_dragen_run(fastq_list_csv=fastq_list)
+    mock_drs_upload.assert_called_once()
+    mock_post.assert_called_once()
+
+
+@patch("cgpclient.client.search_for_document_references")
+def test_download_file(mock_search: MagicMock, document_reference: dict) -> None:
+    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
+    config: ClientConfig = ClientConfig(
+        ods_code="ODS",
+        participant_id="p123",
+        sample_id="s123",
+        referral_id="r123",
+        run_id="run123",
+    )
+    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
+    client.download_file()

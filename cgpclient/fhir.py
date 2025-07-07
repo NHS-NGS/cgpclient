@@ -1,6 +1,6 @@
 # type: ignore
 # we ignore type checking here because of incompatibilities with fhir.resources
-# pylint: disable=unsubscriptable-object
+# pylint: disable=unsubscriptable-object,not-an-iterable
 from __future__ import annotations
 
 import logging
@@ -351,7 +351,7 @@ def document_reference_for_drs_object(
     log.info("Creating DocumentReference resource for file: %s", drs_object.name)
     return DocumentReference(
         id=create_uuid(),
-        identifier=[client.config.file_identifier(drs_object.name)],
+        identifier=[client.config.file_identifier(file_id=drs_object.name)],
         status=DocumentReferenceStatus.CURRENT,
         docStatus=DocumentReferenceDocStatus.FINAL,
         author=[client.config.org_reference],
@@ -502,38 +502,126 @@ def post_fhir_resource(
         )
 
 
-def search_for_document_references(
-    client: cgpclient.client.CGPClient, query_params: dict[str, str] | None = None
-) -> Bundle:
-    if query_params is None:
+def search_for_specimens(
+    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
+) -> list[Specimen]:
+    if search_params is not None:
         # use the client config to define search parameters
-        query_params: dict = {
-            "_count": str(MAX_SEARCH_RESULTS),
-        }
+        query_params: dict = {}
 
-        if client.config.file_id is not None:
+        if search_params.referral_id is not None:
             query_params["identifier"] = identifier_search_string(
-                client.config.file_identifier()
+                search_params.sample_identifier
             )
 
-        if client.config.related_query_string is not None:
-            query_params["related:identifier"] = client.config.related_query_string
-
-        if client.config.participant_id is not None:
+        if search_params.participant_id is not None:
             query_params["subject:identifier"] = identifier_search_string(
-                client.config.participant_identifier
+                search_params.participant_identifier
             )
 
-        if client.config.ods_code is not None:
+        if search_params.referral_id is not None:
+            query_params["subject:identifier"] = identifier_search_string(
+                search_params.participant_identifier
+            )
+
+    bundle: Bundle = search_for_fhir_resource(
+        resource_type=Specimen.__name__,
+        query_params=query_params,
+        client=client,
+    )
+
+    if bundle.entry:
+        return [entry.resource for entry in bundle.entry]
+
+    return []
+
+
+def search_for_patients(
+    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
+) -> list[Patient]:
+    if search_params is not None:
+        query_params: dict = {}
+
+        if search_params.referral_id is not None:
+            query_params["identifier"] = identifier_search_string(
+                search_params.participant_identifier
+            )
+
+    bundle: Bundle = search_for_fhir_resource(
+        resource_type=Patient.__name__,
+        query_params=query_params,
+        client=client,
+    )
+
+    if bundle.entry:
+        return [entry.resource for entry in bundle.entry]
+
+    return []
+
+
+def search_for_service_requests(
+    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
+) -> list[ServiceRequest]:
+    if search_params is not None:
+        # use the client config to define search parameters
+        query_params: dict = {}
+
+        if search_params.referral_id is not None:
+            query_params["identifier"] = identifier_search_string(
+                search_params.referral_identifier
+            )
+
+        if search_params.participant_id is not None:
+            query_params["subject:identifier"] = identifier_search_string(
+                search_params.participant_identifier
+            )
+
+    bundle: Bundle = search_for_fhir_resource(
+        resource_type=ServiceRequest.__name__,
+        query_params=query_params,
+        client=client,
+    )
+
+    if bundle.entry:
+        return [entry.resource for entry in bundle.entry]
+
+    return []
+
+
+def search_for_document_references(
+    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
+) -> list[DocumentReference]:
+    if search_params is not None:
+        query_params: dict = {}
+
+        if search_params.file_id is not None:
+            query_params["identifier"] = identifier_search_string(
+                search_params.file_identifier()
+            )
+
+        if search_params.related_query_string is not None:
+            query_params["related:identifier"] = search_params.related_query_string
+
+        if search_params.participant_id is not None:
+            query_params["subject:identifier"] = identifier_search_string(
+                search_params.participant_identifier
+            )
+
+        if search_params.ods_code is not None:
             query_params["author:identifier"] = identifier_search_string(
-                client.config.org_identifier
+                search_params.org_identifier
             )
 
-    return search_for_fhir_resource(
+    bundle: Bundle = search_for_fhir_resource(
         resource_type=DocumentReference.__name__,
         query_params=query_params,
         client=client,
     )
+
+    if bundle.entry:
+        return [entry.resource for entry in bundle.entry]
+
+    return []
 
 
 def search_for_fhir_resource(

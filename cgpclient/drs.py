@@ -178,7 +178,7 @@ def drs_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/ga4gh/drs/v1.4"
 
 
-def _map_drs_to_https_url(drs_url: str) -> str:
+def map_drs_to_https_url(drs_url: str) -> str:
     """Map a DRS URL to the corresponding HTTPS URL"""
     if not drs_url.startswith("drs://"):
         raise CGPClientException(f"Invalid DRS URL: {drs_url}")
@@ -195,7 +195,7 @@ def _map_drs_to_https_url(drs_url: str) -> str:
         raise CGPClientException(f"Unable to parse DRS URL: {drs_url}") from e
 
 
-def _map_https_to_drs_url(https_url: str) -> str:
+def map_https_to_drs_url(https_url: str) -> str:
     """Map an HTTPS URL to a DRS URL"""
     if not https_url.startswith("https://"):
         raise CGPClientException(f"Invalid HTTPS URL: {https_url}")
@@ -226,7 +226,7 @@ def _https_url_from_id(object_id: str, client: cgpclient.client.CGPClient) -> st
 def _resolve_drs_url_to_https(drs_url: str, client: cgpclient.client.CGPClient) -> str:
     """Turn a drs:// URL into https:// overriding the host as required"""
     if drs_url.startswith("drs:"):
-        drs_url = _map_drs_to_https_url(drs_url)
+        drs_url = map_drs_to_https_url(drs_url)
 
     if drs_url.startswith("https:"):
         if client.override_api_base_url:

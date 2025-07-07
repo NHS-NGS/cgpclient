@@ -195,15 +195,13 @@ def main(cmdline_args: list[str]) -> None:
         config=config,
     )
 
-    files: CGPFiles = client.list_files(
-        include_drs_access_urls=args.include_drs_access_urls,
-    )
+    files: CGPFiles = client.get_files()
 
     files.print_table(
-        sort_by="name",
         summary=not args.all,
         include_drs_access_urls=args.include_drs_access_urls,
         pivot=args.pivot,
+        mime_type=args.mime_type,
     )
 
 
