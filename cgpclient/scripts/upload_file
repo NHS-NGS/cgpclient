@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
-from cgpclient.fhir import ClientConfig  # type: ignore
+from cgpclient.fhir import FHIRConfig  # type: ignore
 from cgpclient.utils import APIM_BASE_URL, setup_logger
 
 
@@ -162,7 +162,7 @@ def main(cmdline_args: list[str]) -> None:
 
     setup_logger(verbose=args.verbose, debug=args.debug)
 
-    config: ClientConfig = ClientConfig(
+    config: FHIRConfig = FHIRConfig(
         ods_code=args.ods_code,
         referral_id=args.referral_id,
         participant_id=args.participant_id,
@@ -180,7 +180,7 @@ def main(cmdline_args: list[str]) -> None:
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
         dry_run=args.dry_run,
-        config=config,
+        fhir_config=config,
     )
 
     files: list[Path] = [args.file]

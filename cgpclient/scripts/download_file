@@ -7,7 +7,6 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
-from cgpclient.fhir import ClientConfig  # type: ignore
 from cgpclient.utils import setup_logger
 
 
@@ -169,7 +168,7 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
-        config=config,
+        fhir_config=config,
     )
 
     client.download_file(

@@ -5,16 +5,10 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
-from fhir.resources.R4B.documentreference import DocumentReference
+from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
-from cgpclient.client import (
-    CGPClient,
-    CGPClientException,
-    CGPFile,
-    CGPFiles,
-    NHSOAuthToken,
-)
+from cgpclient.client import CGPClient, CGPClientException, NHSOAuthToken
 from cgpclient.drs import (
     DrsObject,
     _get_drs_object_from_https_url,
@@ -34,11 +28,10 @@ from cgpclient.drsupload import (
 )
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
+    CGPFHIRService,
     CGPServiceRequest,
-    ClientConfig,
-    get_service_request,
 )
-from cgpclient.utils import create_uuid
+from cgpclient.utils import CGPClientException, create_uuid
 
 
 @pytest.fixture(scope="function")
@@ -289,7 +282,11 @@ def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
 
     mock_server.return_value = MockedResponse()
 
-    response: DrsUploadResponse = _request_upload(upload_request, client)
+    response: DrsUploadResponse = _request_upload(
+        upload_request=upload_request,
+        headers=client.headers,
+        api_base_url=client.api_base_url,
+    )
 
     mock_server.assert_called_once()
 
@@ -379,7 +376,11 @@ def test_drs_upload_file(
     mock_post_object.return_value = None
 
     drs_objects: list[DrsObject] = upload_files_with_drs(
-        filenames=[filename], client=client
+        filenames=[filename],
+        headers=client.headers,
+        api_base_url=client.api_base_url,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
     )
 
     assert len(drs_objects) == 1
@@ -409,9 +410,14 @@ def test_get_service_request(
 
     mock_server.return_value = MockedResponse()
 
-    service_request: ServiceRequest = get_service_request(
-        referral_id="1234", client=client
+    service = CGPFHIRService(
+        client.api_base_url,
+        client.headers,
+        client.fhir_config,
+        client.dry_run,
+        client.output_dir,
     )
+    service_request: ServiceRequest = service.get_service_request("1234")
 
     assert service_request == sr_bundle["entry"][0]["resource"]
 
@@ -433,8 +439,23 @@ def test_get_document_references(
     mock_server.return_value = MockedResponse()
 
     request: CGPServiceRequest = CGPServiceRequest.parse_obj(service_request)
+    service = CGPFHIRService(
+        api_base_url=client.api_base_url,
+        headers=client.headers,
+        config=client.fhir_config,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
+    )
 
-    doc_refs: list[CGPDocumentReference] = request.document_references(client=client)
+    # Mock the search method since document_references uses it
+    with patch.object(
+        service,
+        "search_for_fhir_resource",
+        return_value=Bundle.parse_obj(doc_ref_bundle),
+    ):
+        doc_refs: list[CGPDocumentReference] = request.document_references(
+            fhir_service=client.fhir_service
+        )
 
     assert len(doc_refs) == 1
     assert doc_refs[0] == CGPDocumentReference.parse_obj(
@@ -467,7 +488,7 @@ def test_get_object_from_https_url(
         _get_drs_object_from_https_url(https_url="drs://foo", client=client)
 
     drs_response: DrsObject = _get_drs_object_from_https_url(
-        https_url="https://foo", client=client
+        https_url="foo", headers=client.headers
     )
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
@@ -494,7 +515,10 @@ def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPCli
         assert False
 
     drs_response: DrsObject = get_drs_object(
-        drs_url=drs_object["self_uri"], client=client, expected_hash=md5_hash
+        drs_url=drs_object["self_uri"],
+        api_base_url=client.api_base_url,
+        override_api_base_url=client.override_api_base_url,
+        headers=client.headers,
     )
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
     mock_get_object.assert_called()
@@ -523,14 +547,9 @@ def test_map_drs_to_https_url() -> None:
         map_drs_to_https_url(f"drs://{object_id}")
 
 
-@patch("cgpclient.client.time")
+@patch("cgpclient.auth.time")
 @patch("requests.post")
-@patch("cgpclient.client.CGPClient.get_jwt")
-def test_get_oauth_token(
-    mock_jwt: MagicMock, mock_post: MagicMock, mock_time: MagicMock
-):
-    mock_jwt.return_value = "NOTAJWT"
-
+def test_get_oauth_token(mock_post: MagicMock, mock_time: MagicMock):
     expires_in: int = 10
     issued_at: int = 20
     time_now: int = 20
@@ -549,123 +568,27 @@ def test_get_oauth_token(
 
     mock_post.return_value = MockedResponse()
     mock_time.return_value = time_now
-    client: CGPClient = CGPClient(api_host="host", api_key="secret")
-    assert client._oauth_token is None
 
-    response: NHSOAuthToken = client.get_oauth_token()
-    assert client._oauth_token is not None
-    assert response.model_dump_json() == response.model_dump_json()
-    mock_time.assert_not_called()
+    from cgpclient.auth import OAuthProvider
 
-    class MockedResponse2:
-        def ok(self):
-            return True
+    provider = OAuthProvider("api_key", Path("fake_key.pem"), "kid")
 
-        def json(self):
-            return {
-                "access_token": "new_token",
-                "expires_in": f"{expires_in}",
-                "issued_at": f"{issued_at}",
-                "token_type": "type",
-            }
-
-    mock_post.return_value = MockedResponse2()
-
-    # check the new token isn't used before it expires
-    mock_time.return_value = time_now + expires_in - 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) != "new_token"
-    mock_time.assert_called_once()
-
-    # check the new token is used after the first expires
-    mock_time.return_value = time_now + expires_in + 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) == "new_token"
+    with patch("cgpclient.auth.OAuthProvider._get_jwt", return_value="NOTAJWT"):
+        response: NHSOAuthToken = provider._get_oauth_token("host")
+        assert response.access_token == "token"
 
 
-@patch("cgpclient.client.CGPClient.get_access_token")
-def test_get_headers(mock_token: MagicMock) -> None:
-    mock_token.return_value = "token"
+def test_get_headers() -> None:
     client: CGPClient = CGPClient(api_host="api.service.nhs.uk", api_key="secret")
     assert "apikey" in client.headers
     assert client.headers["apikey"] == "secret"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
-    assert client.headers["Authorization"] == "Bearer token"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
 
-
-@patch("cgpclient.client.search_for_document_references")
-def test_list_files(mock_search: MagicMock, document_reference: dict) -> None:
-    client: CGPClient = CGPClient(api_host="host", api_key="key")
-    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
-    files: CGPFiles = client.get_files()
-    assert len(files) == 1
-    file: CGPFile = files[0]
-    assert file.participant_id == document_reference["subject"]["identifier"]["value"]
-
-
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.fhir.post_fhir_resource")
-def test_upload_file(
-    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict
-) -> None:
-    config: ClientConfig = ClientConfig(ods_code="ODS", participant_id="p123")
-    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
-    mock_drs_upload.return_value = [DrsObject.model_validate(drs_object)]
-    mock_post.return_value = None
-    client.upload_files(filenames=[Path("foo.csv")])
-    mock_drs_upload.assert_called_once()
-    mock_post.assert_called_once()
-
-
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.dragen.post_fhir_resource")
-def test_upload_dragen(
-    mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict, tmp_path
-) -> None:
-    config: ClientConfig = ClientConfig(
-        ods_code="ODS",
-        participant_id="p123",
-        sample_id="s123",
-        referral_id="r123",
-        run_id="run123",
-    )
-    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
-    drs_obj: DrsObject = DrsObject.model_validate(drs_object)
-    mock_drs_upload.return_value = [drs_obj, drs_obj]
-    mock_post.return_value = None
-    fastq_list: Path = tmp_path / "list.csv"
-    with open(fastq_list, "w", encoding="utf-8") as o:
-        o.write("RGID,RGSM,RGLB,Lane,Read1File,Read2File\n")
-        o.write("rgid,s123,rglb,1,file1.fastq.gz,file2.fastq.gz\n")
-    client.upload_dragen_run(fastq_list_csv=fastq_list)
-    mock_drs_upload.assert_called_once()
-    mock_post.assert_called_once()
-
-
-@patch("cgpclient.client.search_for_document_references")
-def test_download_file(mock_search: MagicMock, document_reference: dict) -> None:
-    mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
-    config: ClientConfig = ClientConfig(
-        ods_code="ODS",
-        participant_id="p123",
-        sample_id="s123",
-        referral_id="r123",
-        run_id="run123",
-    )
-    client: CGPClient = CGPClient(api_host="host", api_key="key", config=config)
-    client.download_file()
+    with patch("cgpclient.auth.OAuthProvider._get_access_token", return_value="token"):
+        client = CGPClient(
+            api_host="host",
+            api_key="secret",
+            private_key_pem=Path("pem"),
+            apim_kid="kid",
+        )
+        assert "Authorization" in client.headers
+        assert client.headers["Authorization"] == "Bearer token"

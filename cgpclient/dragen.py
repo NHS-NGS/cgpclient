@@ -15,16 +15,12 @@ from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
-import cgpclient
-import cgpclient.client
 from cgpclient.fhir import (  # type: ignore
+    CGPFHIRService,
     DocumentReferenceRelationship,
+    FHIRConfig,
+    ProcedureStatus,
     bundle_for,
-    create_composition,
-    create_drs_document_references,
-    create_procedure,
-    create_specimen,
-    post_fhir_resource,
     reference_for,
 )
 from cgpclient.utils import CGPClientException
@@ -82,7 +78,7 @@ def read_fastq_list(
 @typing.no_type_check
 def fastq_list_entry_to_document_references(
     entry: FastqListEntry,
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
 ) -> list[DocumentReference]:
     """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
@@ -92,9 +88,8 @@ def fastq_list_entry_to_document_references(
     if entry.Read2File:
         fastq_files.append(entry.Read2File)
 
-    doc_refs: list[DocumentReference] = create_drs_document_references(
-        filenames=fastq_files,
-        client=client,
+    doc_refs: list[DocumentReference] = fhir_service.create_drs_document_references(
+        filenames=fastq_files
     )
 
     if entry.Read2File:
@@ -120,16 +115,107 @@ def fastq_list_entry_to_document_references(
 
 
 @typing.no_type_check
-def map_fastq_list_entries_to_bundle(
+def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
+    logging.info("Creating Specimen resource for germline blood sample")
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[fhir_config.sample_identifier],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="germline",
+                            display="Germline",
+                        )
+                    ]
+                ),
+            )
+        ],
+        type=CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://snomed.info/sct",
+                    code="445295009",
+                    display="Blood specimen with EDTA",
+                )
+            ]
+        ),
+    )
+
+
+@typing.no_type_check
+def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
+    logging.info("Creating Specimen resource for tumour sample")
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[
+            fhir_config.sample_identifier,
+            fhir_config.tumour_identifier,
+        ],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="solid-tumour",
+                            display="Solid Tumour",
+                        )
+                    ]
+                ),
+            )
+        ],
+    )
+
+
+def create_specimen(fhir_config: FHIRConfig) -> Specimen:
+    if fhir_config.tumour_id is not None:
+        return create_tumour_sample(fhir_config=fhir_config)
+    return create_germline_sample(fhir_config=fhir_config)
+
+
+@typing.no_type_check
+def create_procedure(fhir_config: FHIRConfig) -> Procedure:
+    return Procedure(
+        id=create_uuid(),
+        identifier=[fhir_config.run_identifier],
+        code=CodeableConcept(
+            coding=[
+                Coding(
+                    code="461571000124105",
+                    system="http://snomed.info/sct",
+                    display="Whole genome sequencing",
+                )
+            ]
+        ),
+        subject=fhir_config.participant_reference,
+        performer=[ProcedurePerformer(actor=fhir_config.org_reference)],
+        basedOn=[fhir_config.referral_reference],
+        status=ProcedureStatus.COMPLETED,
+    )
+
+
+@typing.no_type_check
+def map_entries_to_bundle(
     entries: list[FastqListEntry],
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
     run_info_file: Path | None = None,
 ) -> Bundle:
     """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
 
-    specimen: Specimen = create_specimen(client=client)
+    specimen: Specimen = create_specimen(fhir_config=fhir_service.config)
 
-    procedure: Procedure = create_procedure(client=client)
+    procedure: Procedure = create_procedure(fhir_config=fhir_service.config)
 
     document_references: list[DocumentReference] = []
 
@@ -137,16 +223,13 @@ def map_fastq_list_entries_to_bundle(
         document_references.extend(
             fastq_list_entry_to_document_references(
                 entry=entry,
-                client=client,
+                fhir_service=fhir_service,
             )
         )
 
     if run_info_file is not None:
         document_references.extend(
-            create_drs_document_references(
-                filenames=[run_info_file],
-                client=client,
-            )
+            fhir_service.create_drs_document_references(filenames=[run_info_file])
         )
 
     composition: Composition = create_composition(
@@ -161,26 +244,22 @@ def map_fastq_list_entries_to_bundle(
 
 def upload_dragen_run(
     fastq_list_csv: Path,
-    client: cgpclient.client.CGPClient,
+    fhir_service: CGPFHIRService,
     run_info_file: Path | None = None,
 ) -> None:
     """Convert a FASTQ list CSV into DRS objects and FHIR resources, and upload
     the FASTQs and the DRS and FHIR resources to the relevant services
     """
+    fhir_config = fhir_service.config
     entries: list[FastqListEntry] = read_fastq_list(
-        fastq_list_csv=fastq_list_csv, sample_id=client.config.sample_id
+        fastq_list_csv=fastq_list_csv, sample_id=fhir_config.sample_id
     )
 
-    if client.config.sample_id is None:
-        client.config.sample_id = entries[0].RGSM
+    if fhir_config.sample_id is None:
+        fhir_config.sample_id = entries[0].RGSM
 
-    bundle: Bundle = map_fastq_list_entries_to_bundle(
-        entries=entries,
-        run_info_file=run_info_file,
-        client=client,
+    bundle: Bundle = map_entries_to_bundle(
+        entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
 
-    post_fhir_resource(
-        resource=bundle,  # type: ignore
-        client=client,
-    )
+    fhir_service.post_fhir_resource(resource=bundle)

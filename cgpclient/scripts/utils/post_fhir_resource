@@ -10,7 +10,7 @@ import yaml  # type: ignore
 
 from cgpclient.client import CGPClient
 from cgpclient.fhir import (  # type: ignore
-    ClientConfig,
+    FHIRConfig,
     create_resource_from_dict,
     post_fhir_resource,
 )
@@ -131,7 +131,7 @@ def main(cmdline_args: list[str]) -> None:
     elif args.verbose:
         logging.getLogger().setLevel(logging.INFO)
 
-    config: ClientConfig = ClientConfig(
+    config: FHIRConfig = FHIRConfig(
         ods_code=args.ods_code,
     )
 
@@ -143,7 +143,7 @@ def main(cmdline_args: list[str]) -> None:
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
         dry_run=args.dry_run,
-        config=config,
+        fhir_config=config,
     )
 
     with open(args.file, "r", encoding="utf-8") as input_file:

@@ -1,15 +1,10 @@
 # pylint: disable=not-an-iterable,unsubscriptable-object
 from __future__ import annotations
 
-import logging
 import typing
-import uuid
 from functools import cache
 from pathlib import Path
-from time import time
 
-import jwt
-import requests  # type: ignore
 from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.documentreference import DocumentReference
@@ -19,32 +14,14 @@ from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.relatedperson import RelatedPerson
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
-from pydantic import BaseModel
 from tabulate import tabulate  # type: ignore
 
+from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
 from cgpclient.drs import DrsObject, get_drs_object, map_https_to_drs_url
 from cgpclient.drsupload import upload_files_with_drs
-from cgpclient.fhir import (  # type: ignore
-    CGPServiceRequest,
-    ClientConfig,
-    PedigreeRole,
-    get_patient,
-    get_resource,
-    get_service_request,
-    search_for_document_references,
-    search_for_fhir_resource,
-    search_for_service_requests,
-    upload_files,
-)
-from cgpclient.utils import (
-    APIM_BASE_URL,
-    REQUEST_TIMEOUT_SECS,
-    CGPClientException,
-    create_uuid,
-)
-
-log = logging.getLogger(__name__)
+from cgpclient.fhir import CGPFHIRService, CGPServiceRequest, FHIRConfig  # type: ignore
+from cgpclient.utils import CGPClientException, create_uuid
 
 
 class CGPFile:
@@ -436,32 +413,7 @@ class CGPReferral:
 
 
 class CGPReferrals:
-    def __init__(self, service_requests: list[ServiceRequest], client: CGPClient):
-        self._referrals = [CGPReferral(s, client=client) for s in service_requests]
-        self._client = client
-
-    def __len__(self) -> int:
-        return len(self._referrals)
-
-    def __getitem__(self, index: int) -> CGPReferral:
-        return self._referrals[index]
-
-    @classmethod
-    def search(
-        cls, client: CGPClient, search_params: ClientConfig | None = None
-    ) -> CGPReferrals:
-        serv_reqs: list[ServiceRequest] = search_for_service_requests(
-            client=client, search_params=search_params
-        )
-
-        return CGPReferrals(service_requests=serv_reqs, client=client)
-
-
-class NHSOAuthToken(BaseModel):
-    access_token: str
-    expires_in: str
-    token_type: str
-    issued_at: str
+    referrals: list[CGPReferral]
 
 
 class CGPClient:
@@ -471,6 +423,7 @@ class CGPClient:
     def __init__(
         self,
         api_host: str,
+        auth_provider: AuthProvider | None = None,
         api_key: str | None = None,
         api_name: str | None = None,
         private_key_pem: Path | None = None,
@@ -478,26 +431,38 @@ class CGPClient:
         override_api_base_url: bool = False,
         dry_run: bool = False,
         output_dir: Path | None = None,
-        config: ClientConfig | None = None,
+        fhir_config: FHIRConfig | None = None,
     ):
-        self.api_key = api_key
         self.api_host = api_host
         self.api_name = api_name
-        self.private_key_pem = private_key_pem
-        self.apim_kid = apim_kid
         self.override_api_base_url = override_api_base_url
         self.dry_run = dry_run
         self.output_dir = output_dir
-        self.config = ClientConfig() if config is None else config
+        self.fhir_config = FHIRConfig() if fhir_config is None else fhir_config
 
-        self._oauth_token: NHSOAuthToken | None = None
-        self._using_sandbox_env = self.api_host.startswith("sandbox.")
+        # Use provided auth provider or create one from legacy parameters
+        self.auth_provider = auth_provider or create_auth_provider(
+            api_host=api_host,
+            api_key=api_key,
+            private_key_pem=private_key_pem,
+            apim_kid=apim_kid,
+        )
 
         if self.output_dir is not None:
             self.output_dir = self.output_dir / Path(create_uuid())
             self.output_dir.mkdir(parents=True, exist_ok=True)
             log.info("Created output directory: %s", self.output_dir)
 
+        # Initialize a fhir service
+        self.fhir_service = CGPFHIRService(
+            api_base_url=self.api_base_url,
+            headers=self.headers,
+            config=self.fhir_config,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
+        )
+
+    # API
     @property
     def api_base_url(self) -> str:
         """Return the base URL for the overall API"""
@@ -507,121 +472,18 @@ class CGPClient:
         return self.api_host
 
     @property
-    def oauth_endpoint(self) -> str:
-        """Return the NHS OAuth endpoint for the environment"""
-        return f"https://{self.api_host}/oauth2/token"
-
-    def get_jwt(self) -> str:
-        """Create a JWT in the NHS format and sign it with the private key"""
-        # following: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication # noqa: E501
-        if self.private_key_pem is None or self.apim_kid is None:
-            raise CGPClientException("Can't create JWT without private key PEM and KID")
-
-        with open(self.private_key_pem, "r", encoding="utf-8") as pem:
-            private_key = pem.read()
-
-        expiry_time: int = int(time()) + (5 * 60)  # 5 mins in the future
-
-        log.debug(
-            "Creating JWT for KID: %s and signing with private key: %s",
-            self.apim_kid,
-            self.private_key_pem,
-        )
-
-        return jwt.encode(
-            payload={
-                "sub": self.api_key,
-                "iss": self.api_key,
-                "jti": str(uuid.uuid4()),
-                "aud": self.oauth_endpoint,
-                "exp": expiry_time,
-            },
-            key=private_key,
-            algorithm="RS512",
-            headers={"kid": self.apim_kid},
-        )
-
-    def request_access_token(self) -> NHSOAuthToken:
-        """Fetch an OAuth token from the NHS OAuth server"""
-        # following: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication # noqa: E501
-        log.info("Requesting OAuth token from: %s", self.oauth_endpoint)
-        response: requests.Response = requests.post(
-            url=self.oauth_endpoint,
-            headers={"content-type": "application/x-www-form-urlencoded"},
-            data={
-                "grant_type": "client_credentials",
-                "client_assertion_type": (
-                    "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-                ),
-                "client_assertion": self.get_jwt(),
-            },
-            timeout=REQUEST_TIMEOUT_SECS,
-        )
-        if response.ok:
-            log.info("Got successful response from OAuth server")
-            return NHSOAuthToken.model_validate(response.json())
-
-        raise CGPClientException(
-            f"Failed to get OAuth token, status code: {response.status_code}"
-        )
-
-    def get_oauth_token(self) -> NHSOAuthToken:
-        """Get the current OAuth token, making a new request to the NHS
-        OAuth server if it is not available or has expired"""
-        if self._oauth_token is None or (
-            int(time())
-            > int(self._oauth_token.issued_at) + int(self._oauth_token.expires_in)
-        ):
-            # we need to fetch a new token from the NHS
-            log.info("Requesting new OAuth token")
-            self._oauth_token = self.request_access_token()
-
-        return self._oauth_token
-
-    def get_access_token(self) -> str | None:
-        """Get the current OAuth access token value"""
-        if self._using_sandbox_env:
-            log.info("No access token required in sandbox environment")
-            return None
-
-        return self.get_oauth_token().access_token
-
-    @property
     def headers(self) -> dict[str, str]:
         """Fetch the HTTP headers necessary to interact with NHS APIM"""
+        return self.auth_provider.get_headers(self.api_host)
 
-        if self._using_sandbox_env:
-            log.debug("Skipping authentication for sandbox environment")
-            return {}
-
-        if self.private_key_pem is not None:
-            # use OAuth if we're given a private key
-            log.debug("Using signed JWT authentication")
-            return {"Authorization": f"Bearer {self.get_access_token()}"}
-
-        if self.api_key is not None:
-            # use the supplied API key
-            log.debug("Using API key authentication")
-            if APIM_BASE_URL in self.api_host:
-                # use APIM header
-                log.debug("Using APIM API key header")
-                return {"apikey": self.api_key}
-
-            # otherwise use standard header
-            log.debug("Using standard API key header")
-            return {"X-API-Key": self.api_key}
-
-        # no auth by default
-        log.debug("No API authentication")
-        return {}
-
+    # FHIR Service delegation
     def get_service_request(self, referral_id: str) -> CGPServiceRequest:
         """Fetch a FHIR ServiceRequest resource for the given NGIS referral ID"""
-        return get_service_request(referral_id=referral_id, client=self)
+        return self.fhir_service.get_service_request(referral_id=referral_id)
 
     def get_patient(self, participant_id: str) -> Patient:
         """Fetch a FHIR Patient resource for the given NGIS participant ID"""
-        return get_patient(participant_id=participant_id, client=self)
+        return self.fhir_service.get_patient(participant_id=participant_id)
 
     @typing.no_type_check
     def download_file(
@@ -636,21 +498,16 @@ class CGPClient:
         if document_reference_id is not None:
             # just use the given DocRef ID
             matches = CGPFiles(
-                document_references=[
-                    get_resource(
-                        resource_id=document_reference_id,
-                        client=self,
-                    )
-                ],
-                client=self,
+                document_references=self.fhir_service.get_resource(
+                    resource_id=document_reference_id
+                )
             )
         else:
             # search for matching files
             matches = CGPFiles(
-                document_references=search_for_document_references(
+                document_references=self.fhir_service.search_for_document_references(
                     client=self, search_params=self.config
-                ),
-                client=self,
+                )
             )
 
         if len(matches) == 0:
@@ -665,7 +522,8 @@ class CGPClient:
 
     def get_referrals(self) -> CGPReferrals:
         return CGPReferrals(
-            service_requests=search_for_service_requests(client=self), client=self
+            service_requests=self.fhir_service.search_for_service_requests(client=self),
+            client=self,
         )
 
     def get_files(self) -> CGPFiles:
@@ -678,12 +536,15 @@ class CGPClient:
         """Upload a file using the DRS upload protocol"""
         return upload_files_with_drs(
             filenames=[filename],
-            client=self,
+            headers=self.headers,
+            api_base_url=self.api_base_url,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
         )
 
     def upload_files(self, filenames: list[Path]) -> None:
         """Upload the files using the DRS upload protocol"""
-        upload_files(filenames=filenames, client=self)
+        self.fhir_service.upload_files(filenames=filenames)
 
     def upload_dragen_run(
         self,
@@ -695,5 +556,5 @@ class CGPClient:
         upload_dragen_run(
             fastq_list_csv=fastq_list_csv,
             run_info_file=run_info_file,
-            client=self,
+            fhir_service=self.fhir_service,
         )

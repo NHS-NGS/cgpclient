@@ -16,9 +16,7 @@ import requests
 from fhir.resources.R4B import construct_fhir_element
 from fhir.resources.R4B.attachment import Attachment
 from fhir.resources.R4B.bundle import Bundle, BundleEntry, BundleEntryRequest
-from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
-from fhir.resources.R4B.composition import Composition, CompositionSection
 from fhir.resources.R4B.device import Device, DeviceDeviceName, DeviceVersion
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
@@ -26,12 +24,11 @@ from fhir.resources.R4B.documentreference import (
     DocumentReferenceContext,
 )
 from fhir.resources.R4B.domainresource import DomainResource
-from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.identifier import Identifier
 from fhir.resources.R4B.meta import Meta
 from fhir.resources.R4B.organization import Organization
 from fhir.resources.R4B.patient import Patient
-from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
+from fhir.resources.R4B.procedure import Procedure
 from fhir.resources.R4B.provenance import Provenance, ProvenanceAgent
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.relatedperson import RelatedPerson
@@ -39,7 +36,6 @@ from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 
 import cgpclient
-import cgpclient.client
 from cgpclient.drs import DrsObject
 from cgpclient.drsupload import upload_files_with_drs
 from cgpclient.utils import (
@@ -160,15 +156,14 @@ class CGPServiceRequest(ServiceRequest):
     """A subclass of a FHIR ServiceRequest modelling an NGIS referral"""
 
     def get_pedigree_roles(
-        self, client: cgpclient.client.CGPClient
+        self, fhir_service: CGPFHIRService
     ) -> dict[str, PedigreeRole]:
         """Search the FHIR server for the roles of each participant in the pedigree"""
         # pylint: disable=no-member
         proband_id: str = self.subject.reference
-        bundle: Bundle = search_for_fhir_resource(
+        bundle: Bundle = fhir_service.search_for_fhir_resource(
             resource_type=RelatedPerson.get_resource_type(),
             query_params={"patient": proband_id},
-            client=client,
         )
         roles: dict[str, str] = {self.subject.identifier.value: "proband"}
         if bundle.entry is not None:
@@ -189,13 +184,12 @@ class CGPServiceRequest(ServiceRequest):
         raise CGPClientException("No NGIS referral ID for ServiceRequest")
 
     def document_references(
-        self, client: cgpclient.client.CGPClient
+        self, fhir_service: CGPFHIRService
     ) -> list[CGPDocumentReference]:
         """Fetch associated DocumentReference resources from the FHIR server"""
-        bundle: Bundle = search_for_fhir_resource(
+        bundle: Bundle = fhir_service.search_for_fhir_resource(
             resource_type=DocumentReference.get_resource_type(),
             query_params={"related:identifier": self.referral_id, "_count": 100},
-            client=client,
         )
 
         doc_refs: list[CGPDocumentReference] = []
@@ -211,6 +205,312 @@ CGPClientDevice: Device = Device(
     version=[DeviceVersion(value=cgpclient.__version__)],
     deviceName=[DeviceDeviceName(name="cgpclient", type="manufacturer-name")],
 )
+
+
+class CGPFHIRService:
+    """Service class for FHIR operations, encapsulating client and config"""
+
+    def __init__(
+        self,
+        api_base_url: str,
+        headers: dict,
+        config: FHIRConfig,
+        dry_run: bool,
+        output_dir: Path | None = None,
+    ):
+        self.api_base_url = api_base_url
+        self.headers = headers
+        self.config = config
+        self.dry_run = dry_run
+        self.output_dir = output_dir
+
+    @property
+    def base_url(self) -> str:
+        return fhir_base_url(self.api_base_url)
+
+    def get_resource(
+        self,
+        resource_id: str,
+        resource_type: str | None = None,
+        params: dict[str, str] | None = None,
+    ) -> DomainResource:
+        """Fetch a FHIR resource from the FHIR server"""
+        if resource_type is None and "/" in resource_id:
+            resource_type, resource_id = resource_id.split("/")
+        else:
+            raise CGPClientException("Need explicit resource type")
+
+        url = f"{self.base_url}/{resource_type}/{resource_id}"
+        logging.info("Requesting endpoint: %s", url)
+        response = requests.get(
+            url=url,
+            headers=self.headers,
+            params=params,
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            return construct_fhir_element(resource_type, response.json())
+
+        raise CGPClientException(
+            f"Failed to fetch from endpoint: {url} "
+            f"status: {response.status_code} response: {response.text}"
+        )
+
+    def search_for_fhir_resource(
+        self,
+        resource_type: str,
+        query_params: dict[str, str],
+    ) -> Bundle:
+        """Search for a FHIR resource using the query parameters"""
+        url = f"{self.base_url}/{resource_type}"
+        query_params["_count"] = str(MAX_SEARCH_RESULTS)
+
+        if self.config.workspace_id is not None:
+            query_params["_tag"] = self.config.workspace_id
+
+        logging.info("Requesting endpoint: %s", url)
+        logging.info("Query parameters: %s", query_params)
+
+        response = requests.get(
+            url=url,
+            headers=self.headers,
+            params=query_params,
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            logging.debug(response.json())
+            bundle = Bundle.parse_obj(response.json())
+            if (
+                bundle.link
+                and len(bundle.link) == 1
+                and bundle.link[0].relation == "next"
+            ):
+                url = bundle.link[0].url
+                logging.info(
+                    "More than %i results for search, implement paging!",
+                    MAX_SEARCH_RESULTS,
+                )
+            return bundle
+
+        logging.error(
+            "Failed to fetch from endpoint: %s status: %i response: %s",
+            url,
+            response.status_code,
+            response.text,
+        )
+        raise CGPClientException(
+            f"Error searching for resource, got status code: {response.status_code}"
+        )
+
+    def search_for_document_references(
+        self, query_params: dict[str, str] | None = None
+    ) -> Bundle:
+        if query_params is None:
+            query_params = {"_count": str(MAX_SEARCH_RESULTS)}
+
+            if self.config.file_id is not None:
+                query_params["identifier"] = identifier_search_string(
+                    self.config.file_identifier()
+                )
+
+            if self.config.related_query_string is not None:
+                query_params["related:identifier"] = self.config.related_query_string
+
+            if self.config.participant_id is not None:
+                query_params["subject:identifier"] = identifier_search_string(
+                    self.config.participant_identifier
+                )
+
+            if self.config.ods_code is not None:
+                query_params["author:identifier"] = identifier_search_string(
+                    self.config.org_identifier
+                )
+
+        return self.search_for_fhir_resource(
+            resource_type=DocumentReference.__name__,
+            query_params=query_params,
+        )
+
+    def get_service_request(self, referral_id: str) -> CGPServiceRequest:
+        """Search for a ServiceRequest resource corresponding to an NGIS referral ID"""
+        bundle = self.search_for_fhir_resource(
+            resource_type=ServiceRequest.get_resource_type(),
+            query_params={"identifier": referral_id},
+        )
+        if bundle.entry is None:
+            raise CGPClientException(
+                f"Didn't find a ServiceRequest for NGIS referral ID: {referral_id}"
+            )
+        if len(bundle.entry) == 1:
+            cgp_service_request_dict = bundle.entry[0].resource.dict()
+            return CGPServiceRequest.parse_obj(cgp_service_request_dict)
+        raise CGPClientException(
+            f"Expected a single ServiceRequest for referral_id {referral_id}, "
+            f"got {len(bundle.entry)}"
+        )
+
+    def get_patient(self, participant_id: str) -> Patient:
+        """Search for a Patient resource corresponding to an NGIS participant ID"""
+        bundle = self.search_for_fhir_resource(
+            resource_type=Patient.get_resource_type(),
+            query_params={"identifier": participant_id},
+        )
+        if bundle.entry is None:
+            raise CGPClientException(
+                f"Didn't find a Patient for NGIS participant ID: {participant_id}"
+            )
+        if len(bundle.entry) == 1:
+            return Patient.parse_obj(bundle.entry[0].resource.dict())
+        raise CGPClientException("Unexpected number of Patients found")
+
+    @typing.no_type_check
+    def document_reference_for_drs_object(
+        self, drs_object: DrsObject
+    ) -> DocumentReference:
+        """Create a DocumentReference resource corresponding to a DRS object"""
+        return DocumentReference(
+            id=create_uuid(),
+            identifier=[self.config.file_identifier(drs_object.name)],
+            status=DocumentReferenceStatus.CURRENT,
+            docStatus=DocumentReferenceDocStatus.FINAL,
+            author=[self.config.org_reference],
+            subject=self.config.participant_reference,
+            content=[
+                DocumentReferenceContent(
+                    attachment=Attachment(
+                        url=drs_object.self_uri,
+                        contentType=drs_object.mime_type,
+                        title=drs_object.name,
+                        # in FHIR R4 size is an unsignedInt:
+                        # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
+                        size=min(drs_object.size, MAX_UNSIGNED_INT),
+                        hash=drs_object.checksums[0].checksum,
+                    )
+                ),
+            ],
+            context=DocumentReferenceContext(related=self.config.related_references),
+            meta=Meta(
+                # as a work around to the size limit above, we include the real
+                # file size as a string here as a meta tag
+                tag=[
+                    Coding(
+                        system="https://genomicsengland.co.uk/workaround-attachment-size",
+                        code=f"{drs_object.size}",
+                        display="attachment size in bytes",
+                    )
+                ]
+            ),
+        )
+
+    def create_drs_document_references(
+        self, filenames: list[Path]
+    ) -> list[DocumentReference]:
+        """Upload the files using the DRS upload protocol and return a DocumentReference"""
+        drs_objects: list[DrsObject] = upload_files_with_drs(
+            filenames=filenames,
+            headers=self.headers,
+            api_base_url=self.api_base_url,
+            dry_run=self.dry_run,
+            output_dir=self.output_dir,
+        )
+
+        return [
+            self.document_reference_for_drs_object(
+                drs_object=o,
+            )
+            for o in drs_objects
+        ]
+
+    def upload_files(
+        self,
+        filenames: list[Path],
+    ) -> None:
+        """Upload the files using the DRS upload protocol and post
+        DocumentReferences to the FHIR server"""
+
+        document_references: list[DocumentReference] = (
+            self.create_drs_document_references(
+                filenames=filenames,
+            )
+        )
+
+        self.post_fhir_resource(resource=bundle_for(document_references))
+
+    def add_workspace_meta_tag(self, resource: DomainResource) -> None:
+        """Add the workspace ID to the FHIR meta tags"""
+        if self.config.workspace_id is not None:
+            if resource.meta is None:
+                resource.meta = Meta()
+
+            if resource.meta.tag is None:
+                resource.meta.tag = []
+
+            logging.debug(
+                "Adding workspace ID %s to resource meta tags",
+                self.config.workspace_id,
+            )
+            resource.meta.tag.append(self.config.workspace_meta_tag)
+
+    def add_workspace_meta_tag_to_bundle(self, bundle: Bundle) -> None:
+        for entry in bundle.entry:
+            self.add_workspace_meta_tag(resource=entry.resource)
+
+    def post_fhir_resource(
+        self,
+        resource: DomainResource,
+        params: dict[str, str] | None = None,
+    ) -> None:
+        """Post a FHIR resource to the FHIR server"""
+        url: str = f"{fhir_base_url(self.api_base_url)}/{resource.resource_type}/"
+
+        if resource.resource_type == Bundle.__name__ and resource.type in (
+            BundleType.BATCH,
+            BundleType.TRANSACTION,
+        ):
+            # these bundle types are posted to the root of the FHIR server
+            logging.info("Posting bundle to the root FHIR endpoint")
+            url = f"{fhir_base_url(self.api_base_url)}/"
+            if self.config.org_reference is not None:
+                resource = add_provenance_for_bundle(
+                    bundle=resource, org_reference=self.config.org_reference
+                )
+            self.add_workspace_meta_tag_to_bundle(bundle=resource)
+            logging.info("Posting bundle including %i entries", len(resource.entry))
+
+        self.add_workspace_meta_tag(resource=resource)
+
+        logging.info("Posting resource to endpoint: %s", url)
+
+        if self.output_dir is not None:
+            output_file: Path = self.output_dir / Path("fhir_resources.json")
+            logging.info("Writing FHIR resource to %s", output_file)
+            with open(output_file, "a", encoding="utf-8") as out:
+                print(resource.json(exclude_none=True), file=out)
+
+        if self.dry_run:
+            logging.info("Dry run, so skipping posting resource")
+            return
+
+        response: requests.Response = requests.post(
+            url=url,
+            headers=self.headers,
+            params=params,
+            data=resource.json(exclude_none=True),
+            timeout=REQUEST_TIMEOUT_SECS,
+        )
+        if response.ok:
+            logging.info("Successfully posted FHIR resource")
+        else:
+            logging.error(
+                "Failed to post resource to: %s status: %i response: %s",
+                url,
+                response.status_code,
+                response.text,
+            )
+
+            raise CGPClientException(
+                f"Error posting resource, got status code: {response.status_code}"
+            )
 
 
 def create_resource_from_dict(data: dict) -> DomainResource:
@@ -272,38 +572,6 @@ def fhir_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/FHIR/R4"
 
 
-def get_resource(
-    resource_id: str,
-    client: cgpclient.client.CGPClient,
-    resource_type: str | None = None,
-    params: dict[str, str] | None = None,
-) -> DomainResource:
-    """Fetch a FHIR resource from the FHIR server"""
-    if resource_type is None and "/" in resource_id:
-        resource_type, resource_id = resource_id.split("/")
-    else:
-        raise CGPClientException("Need explicit resource type")
-
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}/{resource_id}"
-    log.info("Requesting endpoint: %s", url)
-    response: requests.Response = requests.get(
-        url=url,
-        headers=client.headers,
-        params=params,
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok:
-        return construct_fhir_element(resource_type, response.json())
-
-    raise CGPClientException(
-        (
-            f"Failed to fetch from endpoint: {url} "
-            f"status: {response.status_code} "
-            f"response: {response.text}"
-        )
-    )
-
-
 def bundle_entry_for(
     resource: DomainResource, method: BundleRequestMethod = BundleRequestMethod.POST
 ) -> BundleEntry:
@@ -343,511 +611,7 @@ def add_provenance_for_bundle(bundle: Bundle, org_reference: Reference) -> Bundl
     return bundle
 
 
-@typing.no_type_check
-def document_reference_for_drs_object(
-    drs_object: DrsObject, client: cgpclient.client.CGPClient
-) -> DocumentReference:
-    """Create a DocumentReference resource corresponding to a DRS object"""
-    log.info("Creating DocumentReference resource for file: %s", drs_object.name)
-    return DocumentReference(
-        id=create_uuid(),
-        identifier=[client.config.file_identifier(file_id=drs_object.name)],
-        status=DocumentReferenceStatus.CURRENT,
-        docStatus=DocumentReferenceDocStatus.FINAL,
-        author=[client.config.org_reference],
-        subject=client.config.participant_reference,
-        content=[
-            DocumentReferenceContent(
-                attachment=Attachment(
-                    url=drs_object.self_uri,
-                    contentType=drs_object.mime_type,
-                    title=drs_object.name,
-                    # in FHIR R4 size is an unsignedInt:
-                    # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
-                    size=min(drs_object.size, MAX_UNSIGNED_INT),
-                    hash=drs_object.checksums[0].checksum,
-                )
-            ),
-        ],
-        context=DocumentReferenceContext(related=client.config.related_references),
-        meta=Meta(
-            # as a work around to the size limit above, we include the real
-            # file size as a string here as a meta tag
-            tag=[
-                Coding(
-                    system="https://genomicsengland.co.uk/workaround-attachment-size",
-                    code=f"{drs_object.size}",
-                    display="attachment size in bytes",
-                )
-            ]
-        ),
-    )
-
-
-def create_drs_document_references(
-    filenames: list[Path],
-    client: cgpclient.client.CGPClient,
-) -> list[DocumentReference]:
-    """Upload the files using the DRS upload protocol and return a DocumentReference"""
-    drs_objects: list[DrsObject] = upload_files_with_drs(
-        filenames=filenames, client=client
-    )
-
-    return [
-        document_reference_for_drs_object(
-            drs_object=o,
-            client=client,
-        )
-        for o in drs_objects
-    ]
-
-
-def upload_files(
-    filenames: list[Path],
-    client: cgpclient.client.CGPClient,
-) -> None:
-    """Upload the files using the DRS upload protocol and post
-    DocumentReferences to the FHIR server"""
-
-    document_references: list[DocumentReference] = create_drs_document_references(
-        filenames=filenames,
-        client=client,
-    )
-
-    post_fhir_resource(
-        resource=bundle_for(document_references),
-        client=client,
-    )
-
-
-def add_workspace_meta_tag(
-    resource: DomainResource, client: cgpclient.client.CGPClient
-) -> None:
-    """Add the workspace ID to the FHIR meta tags"""
-    if client.config.workspace_id is not None:
-        if resource.meta is None:
-            resource.meta = Meta()
-
-        if resource.meta.tag is None:
-            resource.meta.tag = []
-
-        log.debug(
-            "Adding workspace ID %s to resource meta tags", client.config.workspace_id
-        )
-        resource.meta.tag.append(client.config.workspace_meta_tag)
-
-
-def add_workspace_meta_tag_to_bundle(
-    bundle: Bundle, client: cgpclient.client.CGPClient
-) -> None:
-    for entry in bundle.entry:
-        add_workspace_meta_tag(resource=entry.resource, client=client)
-
-
-def post_fhir_resource(
-    resource: DomainResource,
-    client: cgpclient.client.CGPClient,
-    params: dict[str, str] | None = None,
-) -> None:
-    """Post a FHIR resource to the FHIR server"""
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource.resource_type}/"
-
-    if resource.resource_type == Bundle.__name__ and resource.type in (
-        BundleType.BATCH,
-        BundleType.TRANSACTION,
-    ):
-        # these bundle types are posted to the root of the FHIR server
-        log.info("Posting %s bundle to the root FHIR endpoint", resource.type)
-        url = f"{fhir_base_url(client.api_base_url)}/"
-        if client.config.org_reference is not None:
-            resource = add_provenance_for_bundle(
-                bundle=resource, org_reference=client.config.org_reference
-            )
-        add_workspace_meta_tag_to_bundle(bundle=resource, client=client)
-        log.info("Bundle includes %i entries", len(resource.entry))
-
-    add_workspace_meta_tag(resource=resource, client=client)
-
-    log.info("Posting FHIR resource to endpoint: %s", url)
-
-    if client.output_dir is not None:
-        output_file: Path = client.output_dir / Path("fhir_resources.json")
-        log.info("Writing FHIR resource to %s", output_file)
-        with open(output_file, "a", encoding="utf-8") as out:
-            print(resource.json(exclude_none=True), file=out)
-
-    if client.dry_run:
-        log.info("Dry run, so skipping posting resource")
-        return
-
-    response: requests.Response = requests.post(
-        url=url,
-        headers=client.headers,
-        params=params,
-        data=resource.json(exclude_none=True),
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok:
-        log.info("Successfully posted FHIR resource")
-    else:
-        log.error(
-            "Failed to post resource to: %s status: %i response: %s",
-            url,
-            response.status_code,
-            response.text,
-        )
-
-        raise CGPClientException(
-            f"Error posting resource, got status code: {response.status_code}"
-        )
-
-
-def search_for_specimens(
-    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
-) -> list[Specimen]:
-    if search_params is not None:
-        # use the client config to define search parameters
-        query_params: dict = {}
-
-        if search_params.referral_id is not None:
-            query_params["identifier"] = identifier_search_string(
-                search_params.sample_identifier
-            )
-
-        if search_params.participant_id is not None:
-            query_params["subject:identifier"] = identifier_search_string(
-                search_params.participant_identifier
-            )
-
-        if search_params.referral_id is not None:
-            query_params["subject:identifier"] = identifier_search_string(
-                search_params.participant_identifier
-            )
-
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=Specimen.__name__,
-        query_params=query_params,
-        client=client,
-    )
-
-    if bundle.entry:
-        return [entry.resource for entry in bundle.entry]
-
-    return []
-
-
-def search_for_patients(
-    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
-) -> list[Patient]:
-    if search_params is not None:
-        query_params: dict = {}
-
-        if search_params.referral_id is not None:
-            query_params["identifier"] = identifier_search_string(
-                search_params.participant_identifier
-            )
-
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=Patient.__name__,
-        query_params=query_params,
-        client=client,
-    )
-
-    if bundle.entry:
-        return [entry.resource for entry in bundle.entry]
-
-    return []
-
-
-def search_for_service_requests(
-    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
-) -> list[ServiceRequest]:
-    if search_params is not None:
-        # use the client config to define search parameters
-        query_params: dict = {}
-
-        if search_params.referral_id is not None:
-            query_params["identifier"] = identifier_search_string(
-                search_params.referral_identifier
-            )
-
-        if search_params.participant_id is not None:
-            query_params["subject:identifier"] = identifier_search_string(
-                search_params.participant_identifier
-            )
-
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=ServiceRequest.__name__,
-        query_params=query_params,
-        client=client,
-    )
-
-    if bundle.entry:
-        return [entry.resource for entry in bundle.entry]
-
-    return []
-
-
-def search_for_document_references(
-    client: cgpclient.client.CGPClient, search_params: ClientConfig | None = None
-) -> list[DocumentReference]:
-    if search_params is not None:
-        query_params: dict = {}
-
-        if search_params.file_id is not None:
-            query_params["identifier"] = identifier_search_string(
-                search_params.file_identifier()
-            )
-
-        if search_params.related_query_string is not None:
-            query_params["related:identifier"] = search_params.related_query_string
-
-        if search_params.participant_id is not None:
-            query_params["subject:identifier"] = identifier_search_string(
-                search_params.participant_identifier
-            )
-
-        if search_params.ods_code is not None:
-            query_params["author:identifier"] = identifier_search_string(
-                search_params.org_identifier
-            )
-
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=DocumentReference.__name__,
-        query_params=query_params,
-        client=client,
-    )
-
-    if bundle.entry:
-        return [entry.resource for entry in bundle.entry]
-
-    return []
-
-
-def search_for_fhir_resource(
-    resource_type: str,
-    query_params: dict[str, str],
-    client: cgpclient.client.CGPClient,
-) -> Bundle:
-    """Search for a FHIR resource using the query parameters"""
-    url: str = f"{fhir_base_url(client.api_base_url)}/{resource_type}"
-    query_params["_count"] = str(MAX_SEARCH_RESULTS)
-
-    if client.config.workspace_id is not None:
-        query_params["_tag"] = client.config.workspace_identifier_string
-
-    log.info("Requesting endpoint: %s", url)
-    log.info("Query parameters: %s", query_params)
-
-    response: requests.Response = requests.get(
-        url=url,
-        headers=client.headers,
-        params=query_params,
-        timeout=REQUEST_TIMEOUT_SECS,
-    )
-    if response.ok or response.status_code:
-        log.debug(response.json())
-        bundle: Bundle = Bundle.parse_obj(response.json())
-        if bundle.link and len(bundle.link) == 1 and bundle.link[0].relation == "next":
-            # TODO: need to override host and follow the next links
-            url: str = bundle.link[0].url
-            log.info(
-                "More than %i results for search, implement paging!", MAX_SEARCH_RESULTS
-            )
-        return bundle
-
-    log.error(
-        "Failed to fetch from endpoint: %s status: %i response: %s",
-        url,
-        response.status_code,
-        response.text,
-    )
-
-    raise CGPClientException(
-        f"Error searching for resource, got status code: {response.status_code}"
-    )
-
-
-def get_service_request(
-    referral_id: str, client: cgpclient.client.CGPClient
-) -> CGPServiceRequest:
-    """Search for a ServiceRequest resource corresponding to an NGIS referral ID"""
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=ServiceRequest.get_resource_type(),
-        query_params={"identifier": referral_id},
-        client=client,
-    )
-    if bundle.entry is None:
-        raise CGPClientException(
-            f"Didn't find a ServiceRequest for NGIS referral ID: {referral_id}"
-        )
-    if len(bundle.entry) == 1:
-        # pylint: disable=unsubscriptable-object
-        return CGPServiceRequest.parse_obj(bundle.entry[0].resource.dict())
-    raise CGPClientException(
-        f"Expected a single ServiceRequest for referral_id {referral_id},"
-        f" got {len(bundle.entry)}"
-    )
-
-
-def get_patient(participant_id: str, client: cgpclient.client.CGPClient):
-    """Search for a Patient resource corresponding to an NGIS participant ID"""
-    bundle: Bundle = search_for_fhir_resource(
-        resource_type=Patient.get_resource_type(),
-        query_params={"identifier": participant_id},
-        client=client,
-    )
-    if bundle.entry is None:
-        raise CGPClientException(
-            f"Didn't find a Patient for NGIS participant ID: {participant_id}"
-        )
-    if len(bundle.entry) == 1:
-        # pylint: disable=unsubscriptable-object
-        return Patient.parse_obj(bundle.entry[0].resource.dict())
-    raise CGPClientException("Unexpected number of Patients found")
-
-
-@typing.no_type_check
-def create_germline_sample(client: cgpclient.client.CGPClient) -> Specimen:
-    log.info(
-        "Creating Specimen resource for sample: %s, type: germline",
-        client.config.sample_id,
-    )
-
-    return Specimen(
-        id=create_uuid(),
-        identifier=[client.config.sample_identifier],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="germline",
-                            display="Germline",
-                        )
-                    ]
-                ),
-            )
-        ],
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://snomed.info/sct",
-                    code="445295009",
-                    display="Blood specimen with EDTA",
-                )
-            ]
-        ),
-    )
-
-
-@typing.no_type_check
-def create_tumour_sample(client: cgpclient.client.CGPClient) -> Specimen:
-    log.info(
-        "Creating Specimen resource for sample: %s, type: tumour",
-        client.config.sample_id,
-    )
-
-    return Specimen(
-        id=create_uuid(),
-        identifier=[
-            client.config.sample_identifier,
-            client.config.tumour_identifier,
-        ],
-        subject=client.config.participant_reference,
-        request=[client.config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="solid-tumour",
-                            display="Solid Tumour",
-                        )
-                    ]
-                ),
-            )
-        ],
-    )
-
-
-def create_specimen(client: cgpclient.client.CGPClient) -> Specimen:
-    if client.config.tumour_id is not None:
-        return create_tumour_sample(
-            client=client,
-        )
-
-    return create_germline_sample(
-        client=client,
-    )
-
-
-@typing.no_type_check
-def create_procedure(client: cgpclient.client.CGPClient) -> Procedure:
-    log.info("Creating Procedure resource for run: %s", client.config.run_id)
-    return Procedure(
-        id=create_uuid(),
-        identifier=[client.config.run_identifier],
-        code=CodeableConcept(
-            coding=[
-                Coding(
-                    code="461571000124105",
-                    system="http://snomed.info/sct",
-                    display="Whole genome sequencing",
-                )
-            ]
-        ),
-        subject=client.config.participant_reference,
-        performer=[ProcedurePerformer(actor=client.config.org_reference)],
-        basedOn=[client.config.referral_reference],
-        status=ProcedureStatus.COMPLETED,
-    )
-
-
-@typing.no_type_check
-def create_composition(
-    specimen: Specimen,
-    procedure: Procedure,
-    document_references: list[DocumentReference],
-    client: cgpclient.client.CGPClient,
-) -> Composition:
-    log.info("Creating Composition resource for delivery")
-    return Composition(
-        id=create_uuid(),
-        status=CompositionStatus.FINAL,
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://loinc.org",
-                    code="86206-0",
-                    display="Whole genome sequence analysis",
-                )
-            ]
-        ),
-        date=get_current_datetime(),
-        author=[client.config.org_reference],
-        title="WGS sample run",
-        section=[
-            CompositionSection(title="sample", entry=[reference_for(specimen)]),
-            CompositionSection(title="run", entry=[reference_for(procedure)]),
-            CompositionSection(
-                title="files",
-                entry=[
-                    reference_for(document_reference)
-                    for document_reference in document_references
-                ],
-            ),
-        ],
-    )
-
-
-class ClientConfig:
+class FHIRConfig:
     def __init__(
         self,
         participant_id: str | None = None,
