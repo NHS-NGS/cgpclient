@@ -5,21 +5,16 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.servicerequest import ServiceRequest
 
-from cgpclient.client import (
-    CGPClient,
-    CGPClientException,
-    GenomicFile,
-    GenomicFiles,
-    NHSOAuthToken,
-)
+from cgpclient.auth import NHSOAuthToken
+from cgpclient.client import CGPClient
 from cgpclient.drs import (
     DrsObject,
-    get_access_url,
+    _get_drs_object_from_https_url,
+    _map_drs_to_https_url,
     get_drs_object,
-    get_drs_object_from_url,
-    map_drs_to_https_url,
 )
 from cgpclient.drsupload import (
     AccessURL,
@@ -27,15 +22,17 @@ from cgpclient.drsupload import (
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
+    _create_upload_request,
+    _request_upload,
+    _upload_file_to_s3,
     upload_files_with_drs,
 )
 from cgpclient.fhir import (  # type: ignore
     CGPDocumentReference,
+    CGPFHIRService,
     CGPServiceRequest,
-    PedigreeRole,
-    get_service_request,
 )
-from cgpclient.utils import create_uuid
+from cgpclient.utils import CGPClientException, create_uuid
 
 
 @pytest.fixture(scope="function")
@@ -160,8 +157,11 @@ def document_reference() -> dict:
         "content": [
             {
                 "attachment": {
-                    "contentType": "application/vcf",
+                    "contentType": "text/vcf",
                     "url": "https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/e73524e3-4b36-4624-8af8-fe1b0ad28b07",
+                    "title": "variants.vcf",
+                    "size": 100,
+                    "hash": "NOTAHASH",
                 }
             }
         ],
@@ -179,6 +179,13 @@ def document_reference() -> dict:
                     "identifier": {
                         "system": "https://genomicsengland.co.uk/ngis-sample-id",
                         "value": "LP3000173-DNA_E04",
+                    },
+                },
+                {
+                    "reference": "Procedure/8ffaa156-1638-49cb-ba78-e80ad504221a",
+                    "identifier": {
+                        "system": "https://genomicsengland.co.uk/run-id",
+                        "value": "123456",
                     },
                 },
             ]
@@ -223,6 +230,11 @@ def drs_object() -> dict:
     }
 
 
+@pytest.fixture(scope="function")
+def client() -> CGPClient:
+    return CGPClient(api_host="host")
+
+
 def make_upload_response(upload_request: DrsUploadRequest) -> dict:
     objects: dict = {}
     for obj in upload_request.objects:
@@ -250,16 +262,12 @@ def make_upload_response(upload_request: DrsUploadRequest) -> dict:
 
 
 @patch("requests.post")
-def test_request_upload(mock_server: MagicMock, tmp_path):
+def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
     file_name = "test.fastq.gz"
     filename: Path = Path(tmp_path / file_name)
     with open(filename, "w", encoding="utf-8") as file:
         file.write("foo")
-    upload_request: DrsUploadRequest = create_upload_request(
-        filename=filename,
-        mime_type="application/fastq",
-        upload_method_type=DrsUploadMethodType.S3,
-    )
+    upload_request: DrsUploadRequest = _create_upload_request(filenames=[filename])
 
     class MockedResponse:
         def ok(self):
@@ -268,10 +276,15 @@ def test_request_upload(mock_server: MagicMock, tmp_path):
         def json(self):
             return make_upload_response(upload_request)
 
+        def raise_for_status(self):
+            pass
+
     mock_server.return_value = MockedResponse()
 
-    response: DrsUploadResponse = request_upload(
-        upload_request, api_base_url="foo.com/api"
+    response: DrsUploadResponse = _request_upload(
+        upload_request=upload_request,
+        headers=client.headers,
+        api_base_url=client.api_base_url,
     )
 
     mock_server.assert_called_once()
@@ -284,23 +297,23 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
     file = Path("test.fastq.gz")
     input_bucket = "foo"
     input_key = "bar.txt"
-    input_s3_url = f"s3://{input_bucket}/{input_key}"
-    creds = {"aws_access_key_id": "key", "aws_secret_access_key": "secret"}
+    s3_url = f"s3://{input_bucket}/{input_key}"
+    creds = {"AccessKeyId": "key", "SecretAccessKey": "secret", "SessionToken": "token"}
 
     class MockedBotoS3Client:
-        def upload_file(self, upload, bucket, key):
+        def upload_file(self, upload, Bucket, Key):
             assert upload == file
-            assert bucket == input_bucket
-            assert key == input_key
+            assert Bucket == input_bucket
+            assert Key == input_key
             return True
 
     mock_boto.return_value = MockedBotoS3Client()
 
-    s3_url: str = upload_file_to_s3(
+    _upload_file_to_s3(
         file,
         upload_method=DrsUploadMethod(
             type=DrsUploadMethodType.S3,
-            access_url=AccessURL(url=input_s3_url),
+            access_url=AccessURL(url=s3_url),
             credentials=creds,
             region="eu-west-2",
         ),
@@ -308,16 +321,15 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
     mock_boto.assert_called_once_with(
         "s3",
-        aws_access_key_id=creds["aws_access_key_id"],
-        aws_secret_access_key=creds["aws_secret_access_key"],
+        aws_access_key_id=creds["AccessKeyId"],
+        aws_secret_access_key=creds["SecretAccessKey"],
+        aws_session_token=creds["SessionToken"],
         region_name="eu-west-2",
     )
 
-    assert s3_url == input_s3_url
-
     with pytest.raises(CGPClientException):
         # wrong upload type
-        upload_file_to_s3(
+        _upload_file_to_s3(
             Path("test.fastq.gz"),
             upload_method=DrsUploadMethod(
                 type=DrsUploadMethodType.HTTPS,
@@ -328,7 +340,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
     with pytest.raises(CGPClientException):
         # wrong creds
-        upload_file_to_s3(
+        _upload_file_to_s3(
             Path("test.fastq.gz"),
             upload_method=DrsUploadMethod(
                 type=DrsUploadMethodType.S3,
@@ -338,53 +350,56 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
         )
 
 
-@patch("cgpclient.drsupload.request_upload")
-@patch("cgpclient.drsupload.upload_file_to_s3")
-@patch("cgpclient.drsupload.put_object")
+@patch("cgpclient.drsupload._request_upload")
+@patch("cgpclient.drsupload._upload_file_to_s3")
+@patch("cgpclient.drsupload.post_drs_object")
 def test_upload_file(
-    mock_put_object: MagicMock,
+    mock_post_object: MagicMock,
     mock_s3_upload: MagicMock,
     mock_request_upload: MagicMock,
     tmp_path,
+    client: CGPClient,
 ):
     file_name = "test.fastq.gz"
-    mime_type: str = "application/fastq"
     file_data: str = "foo"
     filename: Path = Path(tmp_path / file_name)
     with open(filename, "w", encoding="utf-8") as file:
         file.write(file_data)
 
-    upload_request: DrsUploadRequest = create_upload_request(
-        filename=filename,
-        mime_type=mime_type,
-        upload_method_type=DrsUploadMethodType.S3,
-    )
+    upload_request: DrsUploadRequest = _create_upload_request(filenames=[filename])
 
     mock_request_upload.return_value = DrsUploadResponse.model_validate(
         make_upload_response(upload_request)
     )
     mock_s3_upload.return_value = "foo"
-    mock_put_object.return_value = None
+    mock_post_object.return_value = None
 
-    drs_object: DrsObject = upload_files_with_drs(
-        filename=filename,
-        mime_type=mime_type,
-        api_base_url="foo.com/api",
-        post_resource=True,
+    drs_objects: list[DrsObject] = upload_files_with_drs(
+        filenames=[filename],
+        headers=client.headers,
+        api_base_url=client.api_base_url,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
     )
+
+    assert len(drs_objects) == 1
+
+    drs_object: DrsObject = drs_objects[0]
 
     mock_request_upload.assert_called_once()
     mock_s3_upload.assert_called_once()
-    mock_put_object.assert_called_once()
+    mock_post_object.assert_called_once()
 
     assert drs_object.name == file_name
     assert drs_object.size == len(file_data)
     assert len(drs_object.access_methods) == 1
-    assert drs_object.access_methods[0].access_id == f"s3://bucket/prefix/{file_name}"
+    assert drs_object.access_methods[0].access_id == "s3"
 
 
 @patch("requests.get")
-def test_get_service_request(mock_server: MagicMock, sr_bundle: dict):
+def test_get_service_request(
+    mock_server: MagicMock, sr_bundle: dict, client: CGPClient
+):
     class MockedResponse:
         def ok(self):
             return True
@@ -394,9 +409,14 @@ def test_get_service_request(mock_server: MagicMock, sr_bundle: dict):
 
     mock_server.return_value = MockedResponse()
 
-    service_request: ServiceRequest = get_service_request(
-        referral_id="1234", api_base_url="url"
+    service = CGPFHIRService(
+        client.api_base_url,
+        client.headers,
+        client.fhir_config,
+        client.dry_run,
+        client.output_dir,
     )
+    service_request: ServiceRequest = service.get_service_request("1234")
 
     assert service_request == sr_bundle["entry"][0]["resource"]
 
@@ -406,7 +426,7 @@ def test_get_document_references(
     mock_server: MagicMock,
     doc_ref_bundle: dict,
     service_request: dict,
-    document_reference: dict,
+    client: CGPClient,
 ):
     class MockedResponse:
         def ok(self):
@@ -418,13 +438,28 @@ def test_get_document_references(
     mock_server.return_value = MockedResponse()
 
     request: CGPServiceRequest = CGPServiceRequest.parse_obj(service_request)
-
-    doc_refs: list[CGPDocumentReference] = request.document_references(
-        api_base_url="url"
+    service = CGPFHIRService(
+        api_base_url=client.api_base_url,
+        headers=client.headers,
+        config=client.fhir_config,
+        dry_run=client.dry_run,
+        output_dir=client.output_dir,
     )
 
+    # Mock the search method since document_references uses it
+    with patch.object(
+        service,
+        "search_for_fhir_resource",
+        return_value=Bundle.parse_obj(doc_ref_bundle),
+    ):
+        doc_refs: list[CGPDocumentReference] = request.document_references(
+            fhir_service=client.fhir_service
+        )
+
     assert len(doc_refs) == 1
-    assert doc_refs[0] == doc_ref_bundle["entry"][0]["resource"]
+    assert doc_refs[0] == CGPDocumentReference.parse_obj(
+        doc_ref_bundle["entry"][0]["resource"]
+    )
 
 
 def test_get_url(document_reference: dict):
@@ -433,7 +468,9 @@ def test_get_url(document_reference: dict):
 
 
 @patch("requests.get")
-def test_get_object_from_url(mock_server: MagicMock, drs_object: dict):
+def test_get_object_from_url(
+    mock_server: MagicMock, drs_object: dict, client: CGPClient
+):
     class MockedResponse:
         def ok(self):
             return True
@@ -443,120 +480,52 @@ def test_get_object_from_url(mock_server: MagicMock, drs_object: dict):
 
     mock_server.return_value = MockedResponse()
 
-    drs_response: DrsObject = get_drs_object_from_url(url="foo")
+    drs_response: DrsObject = _get_drs_object_from_https_url(
+        https_url="foo", headers=client.headers
+    )
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
 
 
-@patch("cgpclient.drs.get_object_from_url")
-def test_get_object(mock_get_object: MagicMock, drs_object: dict):
+@patch("cgpclient.drs._get_drs_object_from_https_url")
+def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPClient):
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
-    object_id: str = "foo"
-    api_base_url: str = "url"
     drs_response: DrsObject = get_drs_object(
-        object_id=object_id, api_base_url=api_base_url
+        drs_url=drs_object["self_uri"],
+        api_base_url=client.api_base_url,
+        override_api_base_url=client.override_api_base_url,
+        headers=client.headers,
     )
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
-    mock_get_object.assert_called_once_with(
-        url=f"https://{api_base_url}/ga4gh/drs/v1.4/objects/{object_id}", headers=None
-    )
-
-
-@patch("cgpclient.drs.get_object_from_url")
-def test_get_access_url(mock_get_object: MagicMock, drs_object: dict):
-    mock_get_object.return_value = DrsObject.model_validate(drs_object)
-
-    url: str | None = get_access_url(access_type="htsget", object_url="https://foo")
-    assert url == drs_object["access_methods"][1]["access_url"]["url"]
+    mock_get_object.assert_called_once()
 
 
 def test_map_drs_to_https_url() -> None:
     object_id: str = "1234"
     drs_url: str = f"drs://api.service.nhs.uk/genomic-data-access/{object_id}"
     https_url: str = f"https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/{object_id}"
-    assert map_drs_to_https_url(drs_url) == https_url
+    assert _map_drs_to_https_url(drs_url) == https_url
 
     with pytest.raises(CGPClientException):
-        map_drs_to_https_url(
+        _map_drs_to_https_url(
             f"drs://api.service.nhs.uk/unexpected/genomic-data-access/{object_id}"
         )
 
     with pytest.raises(CGPClientException):
-        map_drs_to_https_url(f"drs://api.service.nhs.uk/{object_id}")
+        _map_drs_to_https_url(f"drs://api.service.nhs.uk/{object_id}")
 
     with pytest.raises(CGPClientException):
-        map_drs_to_https_url(
+        _map_drs_to_https_url(
             f"drs://api.service.nhs.uk/ga4gh/drs/v1.4/objects/{object_id}"
         )
 
     with pytest.raises(CGPClientException):
-        map_drs_to_https_url(f"drs://{object_id}")
+        _map_drs_to_https_url(f"drs://{object_id}")
 
 
-@patch("cgpclient.client.get_service_request")
-@patch("cgpclient.client.CGPServiceRequest.document_references")
-@patch("cgpclient.client.CGPServiceRequest.get_pedigree_roles")
-@patch("cgpclient.client.get_access_url")
-def test_get_genomic_files(
-    mock_get_access_url: MagicMock,
-    mock_get_related: MagicMock,
-    mock_get_doc_refs: MagicMock,
-    mock_get_sr: MagicMock,
-    service_request,
-    document_reference,
-    drs_object: dict,
-):
-    referral_id: str = "foo"
-    participant_id: str = document_reference["subject"]["identifier"]["value"]
-    document_category: str = document_reference["category"][0]["coding"][0]["code"]
-    htsget_url: str = drs_object["access_methods"][1]["access_url"]["url"]
-
-    mock_get_access_url.return_value = htsget_url
-
-    mock_get_doc_refs.return_value = [
-        CGPDocumentReference.parse_obj(document_reference)
-    ]
-
-    mock_get_related.return_value = {participant_id: "proband"}
-
-    mock_get_sr.return_value = CGPServiceRequest.parse_obj(service_request)
-
-    api_key: str = "secret"
-
-    client: CGPClient = CGPClient(api_key=api_key, api_host="host")
-
-    expected: GenomicFiles = GenomicFiles(
-        files=[
-            GenomicFile(
-                referral_id=referral_id,
-                participant_id=participant_id,
-                ngis_document_category=document_category,
-                htsget_url=htsget_url,
-                pedigree_role=PedigreeRole.PROBAND,
-            )
-        ]
-    )
-
-    files: GenomicFiles = client.get_genomic_files(referral_id=referral_id)
-
-    mock_get_access_url.assert_called_once()
-
-    mock_get_doc_refs.assert_called_once_with(
-        api_base_url="host",
-        headers={"apikey": api_key},
-    )
-
-    assert files.model_dump_json() == expected.model_dump_json()
-
-
-@patch("cgpclient.client.time")
+@patch("cgpclient.auth.time")
 @patch("requests.post")
-@patch("cgpclient.client.CGPClient.get_jwt")
-def test_get_oauth_token(
-    mock_jwt: MagicMock, mock_post: MagicMock, mock_time: MagicMock
-):
-    mock_jwt.return_value = "NOTAJWT"
-
+def test_get_oauth_token(mock_post: MagicMock, mock_time: MagicMock):
     expires_in: int = 10
     issued_at: int = 20
     time_now: int = 20
@@ -575,60 +544,27 @@ def test_get_oauth_token(
 
     mock_post.return_value = MockedResponse()
     mock_time.return_value = time_now
-    client: CGPClient = CGPClient(api_host="host", api_key="secret")
-    assert client._oauth_token is None
 
-    response: NHSOAuthToken = client.get_oauth_token()
-    assert client._oauth_token is not None
-    assert response.model_dump_json() == response.model_dump_json()
-    mock_time.assert_not_called()
+    from cgpclient.auth import OAuthProvider
 
-    class MockedResponse2:
-        def ok(self):
-            return True
+    provider = OAuthProvider("api_key", Path("fake_key.pem"), "kid")
 
-        def json(self):
-            return {
-                "access_token": "new_token",
-                "expires_in": f"{expires_in}",
-                "issued_at": f"{issued_at}",
-                "token_type": "type",
-            }
-
-    mock_post.return_value = MockedResponse2()
-
-    # check the new token isn't used before it expires
-    mock_time.return_value = time_now + expires_in - 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) != "new_token"
-    mock_time.assert_called_once()
-
-    # check the new token is used after the first expires
-    mock_time.return_value = time_now + expires_in + 1
-    assert client._oauth_token is not None
-    response = client.get_oauth_token()
-    assert (response.access_token) == "new_token"
+    with patch("cgpclient.auth.OAuthProvider._get_jwt", return_value="NOTAJWT"):
+        response: NHSOAuthToken = provider._get_oauth_token("host")
+        assert response.access_token == "token"
 
 
-@patch("cgpclient.client.CGPClient.get_access_token")
-def test_get_headers(mock_token: MagicMock) -> None:
-    mock_token.return_value = "token"
-    client: CGPClient = CGPClient(api_host="host", api_key="secret")
+def test_get_headers() -> None:
+    client: CGPClient = CGPClient(api_host="api.service.nhs.uk", api_key="secret")
     assert "apikey" in client.headers
     assert client.headers["apikey"] == "secret"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
-    assert client.headers["Authorization"] == "Bearer token"
-    client = CGPClient(
-        api_host="host",
-        api_key="secret",
-        private_key_pem=Path("pem"),
-        apim_kid="kid",
-    )
-    assert "Authorization" in client.headers
+
+    with patch("cgpclient.auth.OAuthProvider._get_access_token", return_value="token"):
+        client = CGPClient(
+            api_host="host",
+            api_key="secret",
+            private_key_pem=Path("pem"),
+            apim_kid="kid",
+        )
+        assert "Authorization" in client.headers
+        assert client.headers["Authorization"] == "Bearer token"

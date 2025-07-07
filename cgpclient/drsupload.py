@@ -13,8 +13,6 @@ import boto3  # type: ignore
 import requests  # type: ignore
 from pydantic import BaseModel, Field
 
-import cgpclient
-import cgpclient.client
 from cgpclient.drs import (
     AccessMethod,
     AccessMethodType,
@@ -153,7 +151,8 @@ def guess_mime_type(filename: Path) -> str:
 
 def _request_upload(
     upload_request: DrsUploadRequest,
-    client: cgpclient.client.CGPClient,  # type: ignore
+    headers: dict,
+    api_base_url: str,  # type: ignore
 ) -> DrsUploadResponse:
     """Request upload details from the DRS server"""
     logging.info("Requesting upload")
@@ -161,8 +160,8 @@ def _request_upload(
     logging.debug(upload_request.model_dump_json(exclude_defaults=True))
 
     response: requests.Response = requests.post(
-        url=f"https://{client.api_base_url}/upload-request",
-        headers=client.headers,
+        url=f"https://{api_base_url}/upload-request",
+        headers=headers,
         timeout=REQUEST_TIMEOUT_SECS,
         json=upload_request.model_dump(),
     )
@@ -241,14 +240,13 @@ def _create_upload_request(filenames: list[Path]) -> DrsUploadRequest:
 
 
 def _get_upload_response_object(
-    filenames: list[Path],
-    client: cgpclient.client.CGPClient,  # type: ignore
+    filenames: list[Path], api_base_url: str, headers: dict
 ) -> dict[str, DrsUploadResponseObject]:
     """Request to upload the file to the DRS server"""
     upload_request: DrsUploadRequest = _create_upload_request(filenames=filenames)
 
     upload_response: DrsUploadResponse = _request_upload(
-        upload_request=upload_request, client=client
+        upload_request=upload_request, api_base_url=api_base_url, headers=headers
     )
 
     return upload_response.objects
@@ -257,35 +255,46 @@ def _get_upload_response_object(
 def _upload_file_with_upload_response_object(
     filename: Path,
     upload_response_object: DrsUploadResponseObject,
-    client: cgpclient.client.CGPClient,  # type: ignore
+    headers: dict,
+    api_base_url: str,
+    dry_run: bool,
+    output_dir: Path | None = None,
 ) -> DrsObject:
     s3_upload_method: DrsUploadMethod = upload_response_object.get_upload_method(
         upload_method_type=DrsUploadMethodType.S3  # type: ignore
     )
 
     _upload_file_to_s3(
-        filename=filename, upload_method=s3_upload_method, dry_run=client.dry_run
+        filename=filename, upload_method=s3_upload_method, dry_run=dry_run
     )
 
     drs_object: DrsObject = upload_response_object.to_drs_object(
-        upload_method=s3_upload_method, api_base_url=client.api_base_url
+        upload_method=s3_upload_method, api_base_url=api_base_url
     )
 
-    post_drs_object(drs_object, client=client)
+    post_drs_object(
+        drs_object,
+        api_base_url=api_base_url,
+        headers=headers,
+        dry_run=dry_run,
+        output_dir=output_dir,
+    )
 
     return drs_object
 
 
 def upload_files_with_drs(
     filenames: list[Path],
-    client: cgpclient.client.CGPClient,
+    headers: dict,
+    api_base_url: str,
+    dry_run: bool,
+    output_dir: Path | None = None,
 ) -> list[DrsObject]:
     """Upload the file following the DRS upload protocol"""
 
     upload_response_objects: dict[str, DrsUploadResponseObject] = (
         _get_upload_response_object(
-            filenames=filenames,
-            client=client,
+            filenames=filenames, headers=headers, api_base_url=api_base_url
         )
     )
 
@@ -296,7 +305,10 @@ def upload_files_with_drs(
             _upload_file_with_upload_response_object(
                 filename=filename,
                 upload_response_object=upload_response_objects[str(filename.name)],
-                client=client,
+                headers=headers,
+                api_base_url=api_base_url,
+                dry_run=dry_run,
+                output_dir=output_dir,
             )
         )
 

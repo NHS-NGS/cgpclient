@@ -8,7 +8,7 @@ from pathlib import Path
 import yaml  # type: ignore
 
 from cgpclient.client import CGPClient, CGPFiles
-from cgpclient.fhir import ClientConfig  # type: ignore
+from cgpclient.fhir import FHIRConfig  # type: ignore
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
@@ -173,7 +173,7 @@ def main(cmdline_args: list[str]) -> None:
     if args.debug:
         logging.getLogger().setLevel(logging.DEBUG)
 
-    config: ClientConfig = ClientConfig(
+    config: FHIRConfig = FHIRConfig(
         ods_code=args.ods_code,
         referral_id=args.referral_id,
         participant_id=args.participant_id,
@@ -190,7 +190,7 @@ def main(cmdline_args: list[str]) -> None:
         private_key_pem=args.private_key_pem_file,
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
-        config=config,
+        fhir_config=config,
     )
 
     files: CGPFiles = client.list_files(
@@ -198,7 +198,7 @@ def main(cmdline_args: list[str]) -> None:
     )
 
     files.print_table(
-        sort_by="name",
+        sort_by="last_updated",
         summary=not args.all,
         include_drs_access_urls=args.include_drs_access_urls,
     )
