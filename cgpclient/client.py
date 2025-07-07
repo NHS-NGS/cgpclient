@@ -268,7 +268,7 @@ class CGPFiles:
             cols.extend(["s3_url", "htsget_url"])
 
         if include_pedigree_roles:
-            cols.insert(6, "pedigree_role")
+            cols.insert(6, "participant_role")
 
         def try_getattr(o, name, default=""):
             try:
