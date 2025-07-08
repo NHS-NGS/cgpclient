@@ -241,7 +241,7 @@ class CGPFiles:
         summary: bool = False,
         include_drs_access_urls: bool = False,
         sort_by: str | None = None,
-        table_format: str = "plain",
+        table_format: str = "tsv",
         pivot: bool = False,
         mime_type: str | None = None,
         include_header: bool = True,
