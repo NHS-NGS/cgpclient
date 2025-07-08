@@ -29,6 +29,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         type=str,
         help="NGIS participant ID, e.g p12345678303",
     )
+    parser.add_argument(
+        "-n",
+        "--nhs_number",
+        type=str,
+        help="NHS number for patient",
+    )
     parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
     parser.add_argument(
         "-id",
@@ -192,6 +198,7 @@ def main(cmdline_args: list[str]) -> None:
         run_id=args.run_id,
         sample_id=args.sample_id,
         workspace_id=args.workspace_id,
+        nhs_number=args.nhs_number,
     )
 
     client: CGPClient = CGPClient(
