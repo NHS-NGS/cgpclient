@@ -19,21 +19,19 @@ We have included an example script in the [scripts](https://github.com/NHS-NGS/c
 
 ## Example data flow
 
-Uploading FASTQ Files after demultiplexing with DRAGEN using the `upload_dragen_run.py` script.
+Uploading FASTQ Files after demultiplexing with DRAGEN using the `upload_dragen_run` script.
 
 ### 1. Configure CGP Client
 
 You will first need to configure your cgpclient. The following is the basic config required:
  
 ``` yaml
-
 ods_code: XXXXXXX # your ODS code, this will be used to associate all resources with your organisation
 verbose: true # print verbose output to the console, for even more detail you can use --debug or debug: true
 dry_run: true # use to test the upload without uploading, you can also use the --dry_run command line argument, exclude or set to false to upload the data
 override_api_base_url: true # needed when testing in non-live environments
 api_host: XXXXXX # will be shared
 api_key: XXXXXXX # will be shared
-
 ```
 
 !!! gel-magnify ""

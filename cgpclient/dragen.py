@@ -8,7 +8,7 @@ from pathlib import Path
 from fhir.resources.R4B.bundle import Bundle
 from fhir.resources.R4B.codeableconcept import CodeableConcept
 from fhir.resources.R4B.coding import Coding
-from fhir.resources.R4B.composition import Composition, CompositionSection
+from fhir.resources.R4B.composition import Composition
 from fhir.resources.R4B.documentreference import (
     DocumentReference,
     DocumentReferenceRelatesTo,
@@ -20,14 +20,16 @@ from pydantic import BaseModel, PositiveInt
 
 from cgpclient.fhir import (  # type: ignore
     CGPFHIRService,
-    CompositionStatus,
     DocumentReferenceRelationship,
     FHIRConfig,
     ProcedureStatus,
     bundle_for,
+    create_composition,
     reference_for,
 )
-from cgpclient.utils import CGPClientException, create_uuid, get_current_datetime
+from cgpclient.utils import CGPClientException, create_uuid
+
+log = logging.getLogger(__name__)
 
 
 class FastqListEntry(BaseModel):
@@ -54,7 +56,7 @@ def read_fastq_list(
         for row in csv.DictReader(file):
             entry: FastqListEntry = FastqListEntry.model_validate(row)
             if sample_id is None:
-                logging.info("Using first RGSM found in file: %s", entry.RGSM)
+                log.info("Using first RGSM found in file: %s", entry.RGSM)
                 sample_id = entry.RGSM
             if entry.RGSM == sample_id:
                 # resolve the FASTQ paths relative to the directory
@@ -69,9 +71,11 @@ def read_fastq_list(
 
                 entries.append(entry)
             else:
-                logging.debug("Ignoring RGSM: %s", entry.RGSM)
+                log.debug("Ignoring RGSM: %s", entry.RGSM)
 
-    logging.info("Read %i entries from FASTQ list file", len(entries))
+    log.info(
+        "Read %i entries from FASTQ list file for sample: %s", len(entries), sample_id
+    )
     return entries
 
 
@@ -116,7 +120,7 @@ def fastq_list_entry_to_document_references(
 
 @typing.no_type_check
 def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
-    logging.info("Creating Specimen resource for germline blood sample")
+    log.info("Creating Specimen resource for germline blood sample")
 
     return Specimen(
         id=create_uuid(),
@@ -151,7 +155,7 @@ def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
 
 @typing.no_type_check
 def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
-    logging.info("Creating Specimen resource for tumour sample")
+    log.info("Creating Specimen resource for tumour sample")
 
     return Specimen(
         id=create_uuid(),
@@ -232,32 +236,11 @@ def map_entries_to_bundle(
             fhir_service.create_drs_document_references(filenames=[run_info_file])
         )
 
-    composition: Composition = Composition(
-        id=create_uuid(),
-        status=CompositionStatus.FINAL,
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://loinc.org",
-                    code="86206-0",
-                    display="Whole genome sequence analysis",
-                )
-            ]
-        ),
-        date=get_current_datetime(),
-        author=[fhir_service.config.org_reference],
-        title="WGS sample run",
-        section=[
-            CompositionSection(title="sample", entry=[reference_for(specimen)]),
-            CompositionSection(title="run", entry=[reference_for(procedure)]),
-            CompositionSection(
-                title="files",
-                entry=[
-                    reference_for(document_reference)
-                    for document_reference in document_references
-                ],
-            ),
-        ],
+    composition: Composition = create_composition(
+        specimen=specimen,
+        procedure=procedure,
+        document_references=document_references,
+        fhir_config=fhir_service.config,
     )
 
     return bundle_for([composition, specimen, procedure] + document_references)
@@ -283,4 +266,4 @@ def upload_dragen_run(
         entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
 
-    fhir_service.post_fhir_resource(resource=bundle)
+    fhir_service.post_fhir_resource(resource=bundle)  # type: ignore

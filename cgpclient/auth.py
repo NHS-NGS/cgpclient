@@ -7,10 +7,12 @@ from time import time
 from typing import Protocol
 
 import jwt
-import requests
+import requests  # type: ignore
 from pydantic import BaseModel
 
 from cgpclient.utils import APIM_BASE_URL, REQUEST_TIMEOUT_SECS, CGPClientException
+
+log = logging.getLogger(__name__)
 
 
 class NHSOAuthToken(BaseModel):
@@ -23,7 +25,7 @@ class NHSOAuthToken(BaseModel):
 class AuthProvider(Protocol):
     """Protocol for authentication providers"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
+    def get_headers(self) -> dict[str, str]:
         """Return HTTP headers for authentication"""
         ...
 
@@ -31,47 +33,51 @@ class AuthProvider(Protocol):
 class NoAuthProvider:
     """No authentication provider for sandbox environments"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
-        logging.debug("No API authentication")
+    def get_headers(self) -> dict[str, str]:
+        log.debug("No API authentication")
         return {}
 
 
 class APIKeyAuthProvider:
     """API key authentication provider"""
 
-    def __init__(self, api_key: str):
+    def __init__(self, api_key: str, api_host: str):
         self.api_key = api_key
+        self.api_host = api_host
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
-        logging.debug("Using API key authentication")
-        if APIM_BASE_URL in api_host:
+    def get_headers(self) -> dict[str, str]:
+        log.debug("Using API key authentication")
+        if APIM_BASE_URL in self.api_host:
             logging.debug("Using APIM API key header")
             return {"apikey": self.api_key}
 
-        logging.debug("Using standard API key header")
+        log.debug("Using standard API key header")
         return {"X-API-Key": self.api_key}
 
 
 class OAuthProvider:
     """OAuth JWT authentication provider for NHS APIM"""
 
-    def __init__(self, api_key: str, private_key_pem: Path, apim_kid: str):
+    def __init__(
+        self, api_key: str, private_key_pem: Path, apim_kid: str, api_host: str
+    ):
         self.api_key = api_key
         self.private_key_pem = private_key_pem
         self.apim_kid = apim_kid
+        self.api_host = api_host
         self._oauth_token: NHSOAuthToken | None = None
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
-        logging.debug("Using signed JWT authentication")
-        return {"Authorization": f"Bearer {self._get_access_token(api_host)}"}
+    def get_headers(self) -> dict[str, str]:
+        log.debug("Using signed JWT authentication")
+        return {"Authorization": f"Bearer {self.get_access_token()}"}
 
-    def _get_access_token(self, api_host: str) -> str:
-        return self._get_oauth_token(api_host).access_token
+    def get_access_token(self) -> str:
+        return self._get_oauth_token().access_token
 
-    def _get_oauth_token(self, api_host: str) -> NHSOAuthToken:
+    def _get_oauth_token(self) -> NHSOAuthToken:
         if self._oauth_token is None or self._is_token_expired():
-            logging.info("Requesting new OAuth token")
-            self._oauth_token = self._request_access_token(api_host)
+            log.info("Requesting new OAuth token")
+            self._oauth_token = self._request_access_token()
         return self._oauth_token
 
     def _is_token_expired(self) -> bool:
@@ -81,9 +87,11 @@ class OAuthProvider:
             self._oauth_token.expires_in
         )
 
-    def _request_access_token(self, api_host: str) -> NHSOAuthToken:
+    def _request_access_token(self, api_host: str | None = None) -> NHSOAuthToken:
+        if api_host is None:
+            api_host = self.api_host
         oauth_endpoint = f"https://{api_host}/oauth2/token"
-        logging.info("Requesting OAuth token from: %s", oauth_endpoint)
+        log.info("Requesting OAuth token from: %s", oauth_endpoint)
 
         response = requests.post(
             url=oauth_endpoint,
@@ -99,7 +107,7 @@ class OAuthProvider:
         )
 
         if response.ok:
-            logging.info("Got successful response from OAuth server")
+            log.info("Got successful response from OAuth server")
             return NHSOAuthToken.model_validate(response.json())
 
         raise CGPClientException(
@@ -112,7 +120,7 @@ class OAuthProvider:
 
         expiry_time = int(time()) + (5 * 60)  # 5 mins in the future
 
-        logging.debug(
+        log.debug(
             "Creating JWT for KID: %s and signing with private key: %s",
             self.apim_kid,
             self.private_key_pem,
@@ -135,8 +143,8 @@ class OAuthProvider:
 class SandboxAuthProvider:
     """Authentication provider for sandbox environments"""
 
-    def get_headers(self, api_host: str) -> dict[str, str]:
-        logging.debug("Skipping authentication for sandbox environment")
+    def get_headers(self) -> dict[str, str]:
+        log.debug("Skipping authentication for sandbox environment")
         return {}
 
 
@@ -152,9 +160,9 @@ def create_auth_provider(
         return SandboxAuthProvider()
 
     if private_key_pem is not None and apim_kid is not None and api_key is not None:
-        return OAuthProvider(api_key, private_key_pem, apim_kid)
+        return OAuthProvider(api_key, private_key_pem, apim_kid, api_host)
 
     if api_key is not None:
-        return APIKeyAuthProvider(api_key)
+        return APIKeyAuthProvider(api_key, api_host)
 
     return NoAuthProvider()

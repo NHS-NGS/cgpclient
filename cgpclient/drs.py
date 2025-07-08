@@ -21,6 +21,8 @@ from cgpclient.utils import (
     md5sum,
 )
 
+log = logging.getLogger(__name__)
+
 # Definitions from:
 # https://ga4gh.github.io/data-repository-service-schemas/preview/release/drs-1.4.0/docs/
 
@@ -118,7 +120,7 @@ class DrsObject(BaseModel):
 
         https_url: str = _https_url_from_id(self.id, api_base_url=api_base_url)
         url: str = f"{https_url}/access/{access_method.access_id}"
-        logging.info("Requesting endpoint: %s", url)
+        log.info("Requesting endpoint: %s", url)
         response = requests.get(
             url=url,
             headers=headers,
@@ -126,8 +128,8 @@ class DrsObject(BaseModel):
         )
         if response.ok:
             access_url: AccessURL = AccessURL.model_validate(response.json())
-            logging.info("Successfully retrieved fetchable URL")
-            logging.debug(access_url.url)
+            log.info("Successfully retrieved fetchable URL")
+            log.debug(access_url.url)
             return access_url.url
 
         raise CGPClientException("Failed to get fetchable URL from access ID")
@@ -148,7 +150,7 @@ class DrsObject(BaseModel):
         force_overwrite: bool = False,
         expected_hash: str | None = None,
     ) -> None:
-        logging.info("Downloading data for DRS object")
+        log.info("Downloading data for DRS object")
         presigned_url: str = self._get_fetchable_url_for_access_id(
             access_method_type=AccessMethodType.S3,  # type: ignore
             api_base_url=api_base_url,
@@ -177,7 +179,7 @@ def drs_base_url(api_base_url: str) -> str:
     return f"https://{api_base_url}/ga4gh/drs/v1.4"
 
 
-def _map_drs_to_https_url(drs_url: str) -> str:
+def map_drs_to_https_url(drs_url: str) -> str:
     """Map a DRS URL to the corresponding HTTPS URL"""
     if not drs_url.startswith("drs://"):
         raise CGPClientException(f"Invalid DRS URL: {drs_url}")
@@ -187,14 +189,14 @@ def _map_drs_to_https_url(drs_url: str) -> str:
         (_, _, base_url, api_name, object_id) = drs_url.split("/")
         api_base_url: str = f"{base_url}/{api_name}"
         https_url: str = f"{drs_base_url(api_base_url)}/objects/{object_id}"
-        logging.debug("Mapped DRS URL: %s to HTTPS URL: %s", drs_url, https_url)
+        log.debug("Mapped DRS URL: %s to HTTPS URL: %s", drs_url, https_url)
         return https_url
     except ValueError as e:
-        logging.error("Error parsing DRS URL: %s", drs_url)
+        log.error("Error parsing DRS URL: %s", drs_url)
         raise CGPClientException(f"Unable to parse DRS URL: {drs_url}") from e
 
 
-def _map_https_to_drs_url(https_url: str) -> str:
+def map_https_to_drs_url(https_url: str) -> str:
     """Map an HTTPS URL to a DRS URL"""
     if not https_url.startswith("https://"):
         raise CGPClientException(f"Invalid HTTPS URL: {https_url}")
@@ -203,10 +205,10 @@ def _map_https_to_drs_url(https_url: str) -> str:
         # maps to:  drs://api.service.nhs.uk/genomic-data-access/1234
         (_, _, base_url, api_name, _, _, _, _, object_id) = https_url.split("/")
         drs_url: str = f"drs://{base_url}/{api_name}/{object_id}"
-        logging.debug("Mapped HTTPS URL: %s to DRS URL: %s", https_url, drs_url)
+        log.debug("Mapped HTTPS URL: %s to DRS URL: %s", https_url, drs_url)
         return drs_url
     except ValueError as e:
-        logging.error("Error parsing HTTPS DRS URL: %s", https_url)
+        log.error("Error parsing HTTPS DRS URL: %s", https_url)
         raise CGPClientException(f"Unable to parse HTTPS DRS URL: {https_url}") from e
 
 
@@ -227,7 +229,7 @@ def _resolve_drs_url_to_https(
 ) -> str:
     """Turn a drs:// URL into https:// overriding the host as required"""
     if drs_url.startswith("drs:"):
-        drs_url = _map_drs_to_https_url(drs_url)
+        drs_url = map_drs_to_https_url(drs_url)
 
     if drs_url.startswith("https:"):
         if override_api_base_url:
@@ -240,7 +242,10 @@ def _resolve_drs_url_to_https(
 
 def _get_drs_object_from_https_url(https_url: str, headers: dict) -> DrsObject:
     """Fetch a DRS object from the specified URL"""
-    logging.info("Requesting endpoint: %s", https_url)
+    if not https_url.startswith("https:"):
+        raise CGPClientException(f"Expected HTTPS URL, got: {https_url}")
+
+    log.info("Requesting endpoint: %s", https_url)
     response: requests.Response = requests.get(
         url=https_url,
         headers=headers,
@@ -249,7 +254,7 @@ def _get_drs_object_from_https_url(https_url: str, headers: dict) -> DrsObject:
     if response.ok:
         return DrsObject.model_validate(response.json())
 
-    logging.error(
+    log.error(
         "Failed to fetch from endpoint: %s status: %i response: %s",
         https_url,
         response.status_code,
@@ -270,24 +275,26 @@ def _stream_data_from_https_url(
     if not https_url.lower().startswith("https://"):
         raise CGPClientException(f"Expecting HTTPS URL, got: {https_url}")
 
-    logging.info("Writing to %s", output)
+    log.info("Writing to %s", output)
     if output.exists() and not force_overwrite:
         overwrite: str = input(f"overwrite existing {output}? (y/n [n]) ")
         if not overwrite.lower().startswith("y"):
             print("not overwritten", file=sys.stderr)
             return
 
-    logging.info("Streaming data from URL")
-    with requests.get(
-        url=https_url, stream=True, timeout=REQUEST_TIMEOUT_SECS
-    ) as response:
-        response.raise_for_status()
+    log.info("Streaming data from URL")
+
+    response = requests.get(url=https_url, stream=True, timeout=REQUEST_TIMEOUT_SECS)
+
+    response.raise_for_status()
+
+    if response.ok:
         num_chunks: int = 0
         with open(output, "wb") as out:
             for chunk in response.iter_content(chunk_size=CHUNK_SIZE_BYTES):
                 out.write(chunk)
                 num_chunks += 1
-        logging.info("Download complete in %i chunks", num_chunks)
+        log.info("Download complete in %i chunks", num_chunks)
 
     if expected_hash is not None:
         # check for object integrity
@@ -295,7 +302,7 @@ def _stream_data_from_https_url(
             raise CGPClientException(
                 f"Downloaded file hash does not match expected hash {expected_hash}"
             )
-        logging.info("File hash successfully verified")
+        log.info("File hash successfully verified")
 
 
 def get_drs_object(
@@ -305,13 +312,13 @@ def get_drs_object(
     headers: dict,
     expected_hash: str | None = None,
 ) -> DrsObject:
-    logging.info("Fetching DRS object from URL: %s", drs_url)
+    log.info("Fetching DRS object from URL: %s", drs_url)
     https_url: str = _resolve_drs_url_to_https(
         drs_url=drs_url,
         api_base_url=api_base_url,
         override_api_base_url=override_api_base_url,
     )
-    logging.info("Resolved DRS URL to: %s", https_url)
+    log.info("Resolved DRS URL to: %s", https_url)
     drs_object: DrsObject = _get_drs_object_from_https_url(
         https_url=https_url, headers=headers
     )
@@ -322,8 +329,8 @@ def get_drs_object(
                     f"Mismatching hash for DRS object, got "
                     f"{checksum.checksum} expected {expected_hash}"
                 )
-        logging.info("DRS object hash matches expected")
-    logging.debug(drs_object)
+        log.info("DRS object hash matches expected")
+    log.debug(drs_object)
     return drs_object
 
 
@@ -335,17 +342,17 @@ def post_drs_object(
     output_dir: Path | None = None,
 ) -> None:
     endpoint: str = f"{drs_base_url(api_base_url)}/objects"
-    logging.info("Posting DRS object: %s", drs_object.id)
-    logging.debug(drs_object.model_dump_json(exclude_defaults=True))
+    log.info("Posting DRS object: %s", drs_object.id)
+    log.debug(drs_object.model_dump_json(exclude_defaults=True))
 
     if output_dir is not None:
         output_file: Path = output_dir / Path("drs_objects.json")
-        logging.info("Writing DRS object to %s", output_file)
+        log.info("Writing DRS object to %s", output_file)
         with open(output_file, "a", encoding="utf-8") as out:
             print(drs_object.model_dump_json(), file=out)
 
     if dry_run:
-        logging.info("Dry run, so skipping posting DRS object")
+        log.info("Dry run, so skipping posting DRS object")
         return
 
     response: requests.Response = requests.post(
@@ -355,7 +362,7 @@ def post_drs_object(
         json=drs_object.model_dump(),
     )
     if response.ok:
-        logging.info("Successfully posted DRS objects")
+        log.info("Successfully posted DRS objects")
     else:
         raise CGPClientException(
             (
