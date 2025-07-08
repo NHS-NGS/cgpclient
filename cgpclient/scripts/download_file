@@ -160,6 +160,7 @@ def main(cmdline_args: list[str]) -> None:
         file_id=args.file_id,
         ods_code=args.ods_code,
         workspace_id=args.workspace_id,
+        document_reference_id=args.document_reference,
     )
 
     client: CGPClient = CGPClient(

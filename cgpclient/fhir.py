@@ -52,6 +52,7 @@ MAX_SEARCH_RESULTS = 100
 MAX_UNSIGNED_INT = 2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
 
 
+# Enumerations for various FHIR resource fields
 class ProcedureStatus(StrEnum):
     PREPARATION = "preparation"
     IN_PROGRESS = "in-progress"
@@ -127,6 +128,8 @@ class CompositionStatus(StrEnum):
     ENTERED_IN_ERROR = "entered-in-error"
 
 
+# A Device resource representing this package used in Provenance resources
+# for FHIR resources created by this package
 CGPClientDevice: Device = Device(
     id=create_uuid(),
     version=[DeviceVersion(value=cgpclient.__version__)],
@@ -162,9 +165,10 @@ class CGPFHIRService:
         params: dict[str, str] | None = None,
     ) -> DomainResource:
         """Fetch a FHIR resource from the FHIR server"""
+        if "/" in resource_id:
+            resource_type, resource_id = resource_id.split("/")
+
         if resource_type is None:
-            if "/" in resource_id:
-                resource_type, resource_id = resource_id.split("/")
             raise CGPClientException("Need explicit resource type")
 
         url = f"{self.base_url}/{resource_type}/{resource_id}"
@@ -223,25 +227,29 @@ class CGPFHIRService:
                 )
             return bundle
 
-        log.error(
-            "Failed to fetch from endpoint: %s status: %i response: %s",
-            url,
-            response.status_code,
-            response.text,
-        )
         raise CGPClientException(
-            f"Error searching for resource, got status code: {response.status_code}"
+            f"Failed to fetch from endpoint: {url} "
+            f"status: {response.status_code} response: {response.text}"
         )
 
     def search_for_document_references(
         self, search_params: FHIRConfig | None = None
     ) -> list[DocumentReference]:
+        """Search for DocumentReferences using the parameters in the FHIR config"""
         query_params: dict[str, str] = {}
 
         if search_params is not None:
+            if search_params.document_reference_id is not None:
+                query_params["_id"] = search_params.document_reference_id
+
             if search_params.file_id is not None:
                 query_params["identifier"] = identifier_search_string(
                     search_params.file_identifier()
+                )
+
+            if search_params.nhs_number is not None:
+                query_params["subject:identifier"] = identifier_search_string(
+                    search_params.nhs_number_identifier
                 )
 
             if search_params.related_query_string is not None:
@@ -269,6 +277,7 @@ class CGPFHIRService:
     def search_for_service_requests(
         self, search_params: FHIRConfig | None = None
     ) -> list[ServiceRequest]:
+        """Search for ServiceRequests using the parameters in the FHIR config"""
         query_params: dict[str, str] = {}
 
         if search_params is not None:
@@ -429,20 +438,16 @@ class CGPFHIRService:
         )
         if response.ok:
             log.info("Successfully posted FHIR resource")
-        else:
-            log.error(
-                "Failed to post resource to: %s status: %i response: %s",
-                url,
-                response.status_code,
-                response.text,
-            )
+            return
 
-            raise CGPClientException(
-                f"Error posting resource, got status code: {response.status_code}"
-            )
+        raise CGPClientException(
+            f"Failed to post to endpoint: {url} "
+            f"status: {response.status_code} response: {response.text}"
+        )
 
 
 def create_resource_from_dict(data: dict) -> DomainResource:
+    """Construct a FHIR resource from a python dictionary"""
     return construct_fhir_element(data["resourceType"], data)
 
 
@@ -454,6 +459,7 @@ def reference_for(
         {"Patient", "Specimen", "ServiceRequest", "Procedure"}
     ),
 ) -> Reference:
+    """Create a Reference resource for the given FHIR resource"""
     if use_placeholder_id:
         reference_value = f"urn:uuid:{resource.id}"
     else:
@@ -478,6 +484,7 @@ def identifier_search_string(identifier: Identifier) -> str:
 
 
 def provenance_for(resource: DomainResource, org_reference: Reference) -> Provenance:
+    """Create a Provenance resource for the given FHIR resource"""
     log.info(
         "Creating Provenance resource for Organization %s for FHIR resource %s",
         org_reference.identifier.value,
@@ -588,6 +595,8 @@ class FHIRConfig:
         tumour_id: str | None = None,
         file_id: str | None = None,
         workspace_id: str | None = None,
+        nhs_number: str | None = None,
+        document_reference_id: str | None = None,
     ):
         self.participant_id = participant_id
         self.referral_id = referral_id
@@ -597,6 +606,14 @@ class FHIRConfig:
         self.tumour_id = tumour_id
         self.file_id = file_id
         self.workspace_id = workspace_id
+        self.nhs_number = nhs_number
+        self.document_reference_id = document_reference_id
+
+        if document_reference_id is not None and document_reference_id.startswith(
+            DocumentReference.__name__
+        ):
+            # allow IDs of the form DocumentReference/UUID
+            self.document_reference_id = document_reference_id.split("/")[-1]
 
     @property
     def workspace_meta_tag(self) -> Coding:
@@ -660,6 +677,15 @@ class FHIRConfig:
         return Identifier(
             system="https://genomicsengland.co.uk/ngis-participant-id",
             value=self.participant_id,
+        )
+
+    @property
+    def nhs_number_identifier(self) -> Identifier:
+        if self.nhs_number is None:
+            raise CGPClientException("No NHS number supplied")
+        return Identifier(
+            system="https://fhir.nhs.uk/Id/nhs-number",
+            value=self.nhs_number,
         )
 
     @property

@@ -204,6 +204,19 @@ class CGPFile:
             raise CGPClientException("Unexpected number of authors")
         return self._document_reference.author[0].identifier.value
 
+    @property
+    @typing.no_type_check
+    def ngis_category(self) -> str | None:
+        if self._document_reference.category:
+            for coding in self._document_reference.category:
+                for entry in coding.coding:
+                    if (
+                        entry.system
+                        == "https://genomicsengland.co.uk/ngis-file-category"
+                    ):
+                        return entry.code
+        return None
+
     def download_data(
         self,
         output: Path | None = None,
@@ -261,6 +274,7 @@ class CGPFiles:
         # columns to include for summary output
         short_cols: list[str] = [
             "last_updated",
+            "ngis_category",
             "content_type",
             "size",
             "author_ods_code",
