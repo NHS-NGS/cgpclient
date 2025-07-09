@@ -133,7 +133,7 @@ The CGP client supports multiple authentication methods:
 
         ### Verify JWT Authentication (Optional)
 
-        To confirm your signed JWT authentication setup is working, use the `cgpclient/scripts/get_nhs_oauth_token.py` script to retrieve an OAuth token.
+        To confirm your signed JWT authentication setup is working, use the `cgpclient/scripts/get_nhs_oauth_token` script to retrieve an OAuth token.
 
 ## Sandbox Environment
 

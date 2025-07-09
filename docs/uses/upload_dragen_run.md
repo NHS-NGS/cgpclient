@@ -1,4 +1,4 @@
-# Upload files from a Dragen run
+# Upload files from a DRAGEN run
 
 !!! gel-attention ""
 
