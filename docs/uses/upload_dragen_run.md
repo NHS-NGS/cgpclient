@@ -1,4 +1,4 @@
-# Uploading files
+# Upload files from a DRAGEN run
 
 !!! gel-attention ""
 
@@ -36,7 +36,7 @@ api_key: XXXXXXX # will be shared
 
 !!! gel-magnify ""
 
-    For full details on configuration options of the cgpclient, see [configuration](../set_up/configuration.md).
+    For full details on configuration options of the cgpclient, see [configuration](../set_up/config.md).
 
 ### 2. Demultiplex the Sequencing Run
 
@@ -49,7 +49,22 @@ Use the **DRAGEN** software (version: >=`4.*.*`) to demultiplex the entire seque
 
 Refer to the offical [DRAGEN documentation](https://support-docs.illumina.com/SW/DRAGEN_v39/Content/SW/DRAGEN/Inputfiles_fDG.htm) on the "FASTQ CSV File Format" for details on the `fastq_list.csv` file.
 
+The following is a basic example:
+
+``` csv
+
+RGID,RGSM,RGLB,Lane,Read1File,Read2File
+GACTGAGTAG.CACTATCAAC.1,my_sample_id,UnknownLibrary,1,my_sample_id_S1_L001_R1_001.fastq.ora,my_sample_id_S1_L001_R2_001.fastq.ora
+
+```
+
 ### 3. Upload FASTQ Files
+
+???+ info
+
+    You will need the NGIS referral and participant IDs to run the script to associate the files with the correct referral.
+
+    It is anticipated the Sequencing Centres will have been sent these when the DNA was sent to them by the GLH ordering the test (this may be the same GLH as the Sequencing Centre)
 
 Use the `upload_dragen_run` script with the following command:
 
@@ -65,6 +80,8 @@ cgpclient/scripts/upload_dragen_run \
   --config_file {path to cgpclient config file} (if you keep your config in ~/.cgpclient/config.yaml this file will be read by default and you don't need to specify it here)
 
 ```
+
+  
 
 - Replace `{someid}` with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload. If not supplied this script will use the first RGSM value found
 - Repeat this command for each unique sample (as listed in the RGSM column) that has files to be uploaded.
@@ -102,5 +119,44 @@ After upload:
 
 - FASTQ files will be linked to the corresponding NGIS participant and referral.
 - The NGIS pipeline will proceed once all required data has been verified.
+
+### 7. Check uploaded files 
+
+``` bash
+
+./cgpclient/scripts/list_files \
+  --participant_id {NGIS participant ID} \
+  --referral_id {NGIS referral ID} \
+  --config_file {path to cgpclient config file} (if you keep your config in ~/.cgpclient/config.yaml this file will be read by default and you don't need to specify it here)
+
+```
+
+## Troubleshooting
+
+### How do I check if a file already exists for my referral / patient?
+
+TBC
+
+### How do I remove a file uploaded by mistake?
+
+TBC
+
+### How do I re-upload files for a patient?
+
+Either:
+
+#### From the same sequencing run I have already uploaded
+
+Re-run the `upload_dragen_run` script using the same parameters as was used initially. The newly uploaded data will... tbc
+
+#### From a new sequencing run
+
+a) using the same DNA sample
+
+TBC
+
+b) using a new DNA sample
+
+TBC
 
 --8<-- "includes/abbreviations.md"

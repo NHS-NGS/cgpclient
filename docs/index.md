@@ -1,12 +1,19 @@
-# Welcome to the CGP Client Library
+---
+hide:
+  - toc
+---
 
-This repository provides a Python client designed to streamline interactions with the Clinical Genomics Platform (CGP) APIs, hosted on the [NHS API Platform](https://digital.nhs.uk/services/api-platform) (APIM).
+# CGP Client Library
 
-[**Get started with the CGP Client** :material-arrow-right:](set_up/get_started.md){ .md-button .md-button--primary }
+### Python client for the Clinical Genomics Platform APIs
 
-[**Discover our library** :material-arrow-right:](uses/code.md){ .md-button .md-button--secondary }
+The [**CGP Client**](https://github.com/NHS-NGS/cgpclient) is a Python library designed to simplify and accelerate your interactions with the Clinical Genomics Platform (CGP) APIs on the [NHS API Platform](https://digital.nhs.uk/services/api-platform).
 
-[**Start contributing** :material-arrow-right:](contributing.md){ .md-button .md-button--secondary }
+[**Get Started with the CGP Client** :material-arrow-right:](set_up/set_up.md){ .md-button .md-button--primary }
+
+[**Discover the Uses** :material-arrow-right:](uses/uses.md){ .md-button .md-button--secondary }
+
+[**Start Contributing** :material-arrow-right:](contributing.md){ .md-button .md-button--secondary }
 
 !!! gel-attention "Alpha Stage"
 
