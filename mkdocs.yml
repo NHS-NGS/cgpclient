@@ -1,6 +1,7 @@
 site_name: CGPClient
 site_url: https://nhs-ngs.github.io/cgpclient
 repo_name: NHS-NGS/cgpclient
+site_dir: public
 
 nav:
   - Home: index.md
@@ -20,6 +21,8 @@ nav:
 
 theme:
   name: material
+  repo_url: https://github.com/NHS-NGS/cgpclient
+  repo_name: GitHub
   custom_dir: docs/assets/overrides
   language: en
   logo: assets/img/GEL_logo_RGB_Light.png
@@ -57,6 +60,8 @@ theme:
     - navigation.tracking
     - search.share
     - toc.follow
+  icon:
+    repo: fontawesome/brands/github
 
 extra_css:
   - assets/stylesheets/extra.css

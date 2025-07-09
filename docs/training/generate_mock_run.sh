@@ -4,7 +4,7 @@
 NUM_SAMPLES=2
 LANE="1"
 READ_LENGTH=151
-READS_PER_SAMPLE=1000  # Number of reads to generate per sample
+READS_PER_SAMPLE=1000 
 
 # Function to generate random DNA sequence
 generate_dna_sequence() {
@@ -89,4 +89,4 @@ EOF
     done
 } > "${RUN_ID}/fastq_list.csv"
 
-echo "✅ Mock run created: ${RUN_ID}"
+echo "Mock run created: ${RUN_ID}"

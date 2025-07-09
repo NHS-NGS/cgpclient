@@ -14,7 +14,7 @@ This course is for users who want to learn how to use the CGPClient library to:
 
 ### Environment Setup
 
-If you have not yet done so, please complete the [Environment Setup](../set_up/get_started.md) before proceeding.
+If you have not yet done so, please complete the [Environment Setup](../set_up/set_up.md) before proceeding.
 
 ### About This Workshop
 

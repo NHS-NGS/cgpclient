@@ -14,7 +14,7 @@ The CGP client supports multiple authentication methods:
 
         ### Register an application in the NHS Developer Hub
 
-        1. First, follow the guidelince to [register your application](../register.md/)
+        1. First, follow the guidelince to [register your application](register.md)
         2. Navigate to your application within the appropriate environment (Development or Production) on the NHS Developer Hub.
         3. Search for and add the "Genomic Data & Access Management" (GDAM) API.
 
@@ -135,12 +135,11 @@ The CGP client supports multiple authentication methods:
 
         To confirm your signed JWT authentication setup is working, use the `cgpclient/scripts/get_nhs_oauth_token.py` script to retrieve an OAuth token.
 
----------
+## Sandbox Environment
 
-## Sandbox Environment (No Authentication Required)
+This methodology does not require authentication
 
 !!! gel-attention ""
 
     * **For testing and experimentation in the APIM sandbox.**
     * **Useful for quickly exploring API functionality without setting up authentication.**
-

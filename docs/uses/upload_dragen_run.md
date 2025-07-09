@@ -36,7 +36,7 @@ api_key: XXXXXXX # will be shared
 
 !!! gel-magnify ""
 
-    For full details on configuration options of the cgpclient, see [configuration](../set_up/configuration.md).
+    For full details on configuration options of the cgpclient, see [configuration](../set_up/config.md).
 
 ### 2. Demultiplex the Sequencing Run
 

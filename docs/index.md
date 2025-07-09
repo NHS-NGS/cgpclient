@@ -1,6 +1,11 @@
+---
+hide:
+  - toc
+---
+
 # CGP Client Library
 
-### Python client for Clinical Genomics Platform APIs
+### Python client for the Clinical Genomics Platform APIs
 
 The [**CGP Client**](https://github.com/NHS-NGS/cgpclient) is a Python library designed to simplify and accelerate your interactions with the Clinical Genomics Platform (CGP) APIs on the [NHS API Platform](https://digital.nhs.uk/services/api-platform).
 
