@@ -19,8 +19,8 @@ from cgpclient.drs import (
     AccessURL,
     Checksum,
     ChecksumType,
+    DrsClient,
     DrsObject,
-    post_drs_object,
 )
 from cgpclient.htsget import htsget_base_url, mime_type_to_htsget_endpoint
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, md5sum
@@ -274,13 +274,8 @@ def _upload_file_with_upload_response_object(
         upload_method=s3_upload_method, api_base_url=api_base_url
     )
 
-    post_drs_object(
-        drs_object,
-        api_base_url=api_base_url,
-        headers=headers,
-        dry_run=dry_run,
-        output_dir=output_dir,
-    )
+    drs_client = DrsClient(api_base_url, headers, dry_run)
+    drs_client.post_drs_object(drs_object, output_dir)
 
     return drs_object
 

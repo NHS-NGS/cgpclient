@@ -21,7 +21,7 @@ from tabulate import tabulate  # type: ignore
 
 from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
-from cgpclient.drs import DrsObject, get_drs_object, map_https_to_drs_url
+from cgpclient.drs import DrsClient, DrsObject, map_https_to_drs_url
 from cgpclient.fhir import CGPFHIRService, FHIRConfig, PedigreeRole  # type: ignore
 from cgpclient.utils import CGPClientException, create_uuid
 
@@ -31,15 +31,18 @@ log = logging.getLogger(__name__)
 class CGPFile:
     _document_reference: DocumentReference
     _drs_object: DrsObject
-    _client: CGPClient
+    _drs_client: DrsClient
+    _client: CGPClient  # Still needed for CGPReferral.get()
     _referral: CGPReferral
 
     @typing.no_type_check
     def __init__(
         self,
         document_reference: DocumentReference,
+        drs_client: DrsClient,
         client: CGPClient,
     ) -> None:
+        self._drs_client = drs_client
         self._client = client
         self._document_reference = document_reference
         self._drs_object = None
@@ -49,12 +52,9 @@ class CGPFile:
     def drs_object(self) -> DrsObject:
         if self._drs_object is None:
             # cache the DRS object so we don't fetch it multiple times
-            self._drs_object = get_drs_object(
+            self._drs_object = self._drs_client.get_drs_object(
                 drs_url=self.drs_url,
                 expected_hash=self.hash,
-                headers=self._client.headers,
-                api_base_url=self._client.api_base_url,
-                override_api_base_url=self._client.override_api_base_url,
             )
 
         return self._drs_object
@@ -224,11 +224,10 @@ class CGPFile:
     ) -> None:
         """Download the DRS object data attached to the DocumentReference"""
         self.drs_object.download_data(
+            drs_client=self._drs_client,
             output=output,
             force_overwrite=force_overwrite,
             expected_hash=self.hash,
-            headers=self._client.headers,
-            api_base_url=self._client.api_base_url,
         )
 
 
@@ -238,8 +237,14 @@ class CGPFiles:
         document_references: list[DocumentReference],
         client: CGPClient,
     ):
+        drs_client = DrsClient(
+            client.api_base_url,
+            client.headers,
+            client.dry_run,
+            client.override_api_base_url,
+        )
         self._files = [
-            CGPFile(document_reference=doc_ref, client=client)
+            CGPFile(document_reference=doc_ref, drs_client=drs_client, client=client)
             for doc_ref in document_references
         ]
 

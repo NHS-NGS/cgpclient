@@ -320,7 +320,7 @@ def test_upload_dragen(
 
 
 @patch("cgpclient.drs.md5sum")
-@patch("cgpclient.client.get_drs_object")
+@patch("cgpclient.drs.DrsClient.get_drs_object")
 @patch("cgpclient.fhir.CGPFHIRService.search_for_document_references")
 @patch("cgpclient.drs.requests.get")
 def test_download_file(

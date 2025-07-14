@@ -144,7 +144,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
 @patch("cgpclient.drsupload._request_upload")
 @patch("cgpclient.drsupload._upload_file_to_s3")
-@patch("cgpclient.drsupload.post_drs_object")
+@patch("cgpclient.drs.DrsClient.post_drs_object")
 def test_drs_upload_file(
     mock_post_object: MagicMock,
     mock_s3_upload: MagicMock,
