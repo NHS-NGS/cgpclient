@@ -14,11 +14,11 @@ from cgpclient.drsupload import (
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
-    _create_upload_request,
-    _request_upload,
-    _upload_file_to_s3,
+    DrsUploader,
+    S3Client,
     upload_files_with_drs,
 )
+from cgpclient.drs import DrsClient
 from cgpclient.utils import CGPClientException, create_uuid
 
 
@@ -59,7 +59,16 @@ def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
     filename: Path = Path(tmp_path / file_name)
     with open(filename, "w", encoding="utf-8") as file:
         file.write("foo")
-    upload_request: DrsUploadRequest = _create_upload_request(filenames=[filename])
+    drs_client = DrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
+    uploader = DrsUploader(drs_client)
+    upload_request: DrsUploadRequest = uploader._create_upload_request(
+        filenames=[filename]
+    )
 
     class MockedResponse:
         def ok(self):
@@ -73,11 +82,7 @@ def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
 
     mock_server.return_value = MockedResponse()
 
-    response: DrsUploadResponse = _request_upload(
-        upload_request=upload_request,
-        headers=client.headers,
-        api_base_url=client.api_base_url,
-    )
+    response: DrsUploadResponse = uploader._request_upload(upload_request)
 
     mock_server.assert_called_once()
 
@@ -101,7 +106,8 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
     mock_boto.return_value = MockedBotoS3Client()
 
-    _upload_file_to_s3(
+    s3_client = S3Client(dry_run=False)
+    s3_client.upload_file(
         file,
         upload_method=DrsUploadMethod(
             type=DrsUploadMethodType.S3,
@@ -121,7 +127,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
     with pytest.raises(CGPClientException):
         # wrong upload type
-        _upload_file_to_s3(
+        s3_client.upload_file(
             Path("test.fastq.gz"),
             upload_method=DrsUploadMethod(
                 type=DrsUploadMethodType.HTTPS,
@@ -132,7 +138,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
     with pytest.raises(CGPClientException):
         # wrong creds
-        _upload_file_to_s3(
+        s3_client.upload_file(
             Path("test.fastq.gz"),
             upload_method=DrsUploadMethod(
                 type=DrsUploadMethodType.S3,
@@ -142,8 +148,8 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
         )
 
 
-@patch("cgpclient.drsupload._request_upload")
-@patch("cgpclient.drsupload._upload_file_to_s3")
+@patch("cgpclient.drsupload.DrsUploader._request_upload")
+@patch("cgpclient.drsupload.S3Client.upload_file")
 @patch("cgpclient.drs.DrsClient.post_drs_object")
 def test_drs_upload_file(
     mock_post_object: MagicMock,
@@ -158,7 +164,16 @@ def test_drs_upload_file(
     with open(filename, "w", encoding="utf-8") as file:
         file.write(file_data)
 
-    upload_request: DrsUploadRequest = _create_upload_request(filenames=[filename])
+    drs_client = DrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
+    uploader = DrsUploader(drs_client)
+    upload_request: DrsUploadRequest = uploader._create_upload_request(
+        filenames=[filename]
+    )
 
     mock_request_upload.return_value = DrsUploadResponse.model_validate(
         make_upload_response(upload_request)

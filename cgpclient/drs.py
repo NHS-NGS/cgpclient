@@ -364,6 +364,3 @@ def map_https_to_drs_url(https_url: str) -> str:
     except ValueError as e:
         log.error("Error parsing HTTPS DRS URL: %s", https_url)
         raise CGPClientException(f"Unable to parse HTTPS DRS URL: {https_url}") from e
-
-
-

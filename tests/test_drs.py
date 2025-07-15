@@ -60,7 +60,12 @@ def test_get_object_from_https_url(
             return drs_object
 
     mock_server.return_value = MockedResponse()
-    drs_client = DrsClient(client.api_base_url, client.headers, client.dry_run, client.override_api_base_url)
+    drs_client = DrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
 
     with pytest.raises(CGPClientException):
         drs_client._get_drs_object_from_https_url(https_url="foo")
@@ -80,7 +85,12 @@ def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPCli
     md5_hash: str = "MD5HASH"
     drs_object["checksums"][0]["checksum"] = md5_hash
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
-    drs_client = DrsClient(client.api_base_url, client.headers, client.dry_run, client.override_api_base_url)
+    drs_client = DrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
 
     with pytest.raises(CGPClientException):
         drs_client.get_drs_object(drs_url=drs_object["id"])
@@ -97,9 +107,7 @@ def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPCli
     except CGPClientException:
         assert False
 
-    drs_response: DrsObject = drs_client.get_drs_object(
-        drs_url=drs_object["self_uri"]
-    )
+    drs_response: DrsObject = drs_client.get_drs_object(drs_url=drs_object["self_uri"])
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
     mock_get_object.assert_called()
 
