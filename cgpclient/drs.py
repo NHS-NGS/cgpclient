@@ -101,7 +101,7 @@ class DrsObject(BaseModel):
 
     def _get_fetchable_url_for_access_id(
         self,
-        drs_client: DrsClient,
+        drs_client: CGPDrsClient,
         access_method_type: AccessMethodType = AccessMethodType.S3,  # type: ignore
     ) -> str:
         access_method: AccessMethod | None = self.get_access_method(
@@ -143,7 +143,7 @@ class DrsObject(BaseModel):
 
     def download_data(
         self,
-        drs_client: DrsClient,
+        drs_client: CGPDrsClient,
         output: Path | None = None,
         force_overwrite: bool = False,
         expected_hash: str | None = None,
@@ -209,7 +209,7 @@ class Error(BaseModel):
     status_code: int
 
 
-class DrsClient:
+class CGPDrsClient:
     """Client for DRS operations, encapsulating API configuration"""
 
     def __init__(

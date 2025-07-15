@@ -21,8 +21,8 @@ from tabulate import tabulate  # type: ignore
 
 from cgpclient.auth import AuthProvider, create_auth_provider
 from cgpclient.dragen import upload_dragen_run
-from cgpclient.drs import DrsClient, DrsObject, map_https_to_drs_url
-from cgpclient.fhir import CGPFHIRService, FHIRConfig, PedigreeRole  # type: ignore
+from cgpclient.drs import CGPDrsClient, DrsObject, map_https_to_drs_url
+from cgpclient.fhir import CGPFHIRClient, FHIRConfig, PedigreeRole  # type: ignore
 from cgpclient.utils import CGPClientException, create_uuid
 
 log = logging.getLogger(__name__)
@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 class CGPFile:
     _document_reference: DocumentReference
     _drs_object: DrsObject
-    _drs_client: DrsClient
+    _drs_client: CGPDrsClient
     _client: CGPClient  # Still needed for CGPReferral.get()
     _referral: CGPReferral
 
@@ -39,7 +39,7 @@ class CGPFile:
     def __init__(
         self,
         document_reference: DocumentReference,
-        drs_client: DrsClient,
+        drs_client: CGPDrsClient,
         client: CGPClient,
     ) -> None:
         self._drs_client = drs_client
@@ -237,7 +237,7 @@ class CGPFiles:
         document_references: list[DocumentReference],
         client: CGPClient,
     ):
-        drs_client = DrsClient(
+        drs_client = CGPDrsClient(
             client.api_base_url,
             client.headers,
             client.dry_run,
@@ -503,7 +503,7 @@ class CGPClient:
             log.info("Created output directory: %s", self.output_dir)
 
         # Initialize a fhir service
-        self.fhir_service = CGPFHIRService(
+        self.fhir_service = CGPFHIRClient(
             api_base_url=self.api_base_url,
             headers=self.headers,
             config=self.fhir_config,

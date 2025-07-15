@@ -7,18 +7,16 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cgpclient.client import CGPClient
-from cgpclient.drs import DrsObject
+from cgpclient.drs import CGPDrsClient, DrsObject
 from cgpclient.drsupload import (
     AccessURL,
+    DrsUploader,
     DrsUploadMethod,
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
-    DrsUploader,
     S3Client,
-    upload_files_with_drs,
 )
-from cgpclient.drs import DrsClient
 from cgpclient.utils import CGPClientException, create_uuid
 
 
@@ -59,7 +57,7 @@ def test_request_upload(mock_server: MagicMock, tmp_path, client: CGPClient):
     filename: Path = Path(tmp_path / file_name)
     with open(filename, "w", encoding="utf-8") as file:
         file.write("foo")
-    drs_client = DrsClient(
+    drs_client = CGPDrsClient(
         client.api_base_url,
         client.headers,
         client.dry_run,
@@ -150,7 +148,7 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
 @patch("cgpclient.drsupload.DrsUploader._request_upload")
 @patch("cgpclient.drsupload.S3Client.upload_file")
-@patch("cgpclient.drs.DrsClient.post_drs_object")
+@patch("cgpclient.drs.CGPDrsClient.post_drs_object")
 def test_drs_upload_file(
     mock_post_object: MagicMock,
     mock_s3_upload: MagicMock,
@@ -164,7 +162,7 @@ def test_drs_upload_file(
     with open(filename, "w", encoding="utf-8") as file:
         file.write(file_data)
 
-    drs_client = DrsClient(
+    drs_client = CGPDrsClient(
         client.api_base_url,
         client.headers,
         client.dry_run,
@@ -181,13 +179,14 @@ def test_drs_upload_file(
     mock_s3_upload.return_value = "foo"
     mock_post_object.return_value = None
 
-    drs_objects: list[DrsObject] = upload_files_with_drs(
-        filenames=[filename],
-        headers=client.headers,
-        api_base_url=client.api_base_url,
-        dry_run=client.dry_run,
-        output_dir=client.output_dir,
+    drs_client = CGPDrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
     )
+    uploader = DrsUploader(drs_client)
+    drs_objects: list[DrsObject] = uploader.upload_files([filename], client.output_dir)
 
     assert len(drs_objects) == 1
 

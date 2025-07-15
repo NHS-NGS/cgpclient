@@ -19,7 +19,7 @@ from cgpclient.drs import (
     AccessURL,
     Checksum,
     ChecksumType,
-    DrsClient,
+    CGPDrsClient,
     DrsObject,
 )
 from cgpclient.htsget import htsget_base_url, mime_type_to_htsget_endpoint
@@ -146,19 +146,21 @@ class S3Url(BaseModel):
 
 class S3Client:
     """Handles S3 upload operations"""
-    
+
     def __init__(self, dry_run: bool = False):
         self.dry_run = dry_run
-    
+
     def upload_file(self, filename: Path, upload_method: DrsUploadMethod) -> None:
         """Upload file to S3 using the upload method details"""
         if upload_method.type != DrsUploadMethodType.S3:
-            raise CGPClientException(f"Invalid upload_method type: {upload_method.type}")
-        
+            raise CGPClientException(
+                f"Invalid upload_method type: {upload_method.type}"
+            )
+
         if self.dry_run:
             log.info("Dry run, so skipping uploading S3 object")
             return
-        
+
         try:
             s3 = boto3.client(
                 "s3",
@@ -171,7 +173,7 @@ class S3Client:
             raise CGPClientException("Missing necessary AWS credentials") from e
         except Exception as e:
             raise CGPClientException("Error creating S3 client") from e
-        
+
         try:
             s3_url = upload_method.access_url.url
             parsed_url = self._parse_s3_url(s3_url)
@@ -180,7 +182,7 @@ class S3Client:
             log.info("Uploaded successfully to %s", s3_url)
         except Exception as e:
             raise CGPClientException("Error uploading file to S3") from e
-    
+
     def _parse_s3_url(self, s3_url: str) -> S3Url:
         """Parse an S3 URL into an S3Url object"""
         bucket, key = s3_url.replace("s3://", "").split("/", 1)
@@ -190,7 +192,7 @@ class S3Client:
 class DrsUploader:
     """Handles DRS file upload operations"""
 
-    def __init__(self, drs_client: DrsClient, s3_client: S3Client | None = None):
+    def __init__(self, drs_client: CGPDrsClient, s3_client: S3Client | None = None):
         self.drs_client = drs_client
         self.s3_client = s3_client or S3Client(drs_client.dry_run)
 
@@ -277,24 +279,9 @@ class DrsUploader:
         self.drs_client.post_drs_object(drs_object, output_dir)
         return drs_object
 
-
-
     def _guess_mime_type(self, filename: Path) -> str:
         """Guess MIME type from filename"""
         (mime_type, _) = mimetypes.guess_type(filename)
         if mime_type is not None:
             return mime_type
         raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
-
-
-def upload_files_with_drs(
-    filenames: list[Path],
-    headers: dict,
-    api_base_url: str,
-    dry_run: bool,
-    output_dir: Path | None = None,
-) -> list[DrsObject]:
-    """Upload files following the DRS upload protocol - wrapper for backward compatibility"""
-    drs_client = DrsClient(api_base_url, headers, dry_run)
-    uploader = DrsUploader(drs_client)
-    return uploader.upload_files(filenames, output_dir)
