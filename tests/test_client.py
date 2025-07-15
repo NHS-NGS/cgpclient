@@ -265,7 +265,7 @@ def test_get_headers() -> None:
         assert client.headers["Authorization"] == "Bearer token"
 
 
-@patch("cgpclient.fhir.CGPFHIRService.search_for_document_references")
+@patch("cgpclient.fhir.CGPFHIRClient.search_for_document_references")
 def test_list_files(mock_search: MagicMock, document_reference: dict, tmp_path) -> None:
     client: CGPClient = CGPClient(api_host="host", api_key="key")
     mock_search.return_value = [DocumentReference.parse_obj(document_reference)]
@@ -280,8 +280,8 @@ def test_list_files(mock_search: MagicMock, document_reference: dict, tmp_path) 
         assert len(lines) == 2
 
 
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.fhir.CGPFHIRService.post_fhir_resource")
+@patch("cgpclient.drsupload.DrsUploader.upload_files")
+@patch("cgpclient.fhir.CGPFHIRClient.post_fhir_resource")
 def test_upload_file(
     mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict
 ) -> None:
@@ -294,8 +294,8 @@ def test_upload_file(
     mock_post.assert_called_once()
 
 
-@patch("cgpclient.fhir.upload_files_with_drs")
-@patch("cgpclient.fhir.CGPFHIRService.post_fhir_resource")
+@patch("cgpclient.drsupload.DrsUploader.upload_files")
+@patch("cgpclient.fhir.CGPFHIRClient.post_fhir_resource")
 def test_upload_dragen(
     mock_post: MagicMock, mock_drs_upload: MagicMock, drs_object: dict, tmp_path
 ) -> None:
@@ -320,8 +320,8 @@ def test_upload_dragen(
 
 
 @patch("cgpclient.drs.md5sum")
-@patch("cgpclient.client.get_drs_object")
-@patch("cgpclient.fhir.CGPFHIRService.search_for_document_references")
+@patch("cgpclient.drs.CGPDrsClient.get_drs_object")
+@patch("cgpclient.fhir.CGPFHIRClient.search_for_document_references")
 @patch("cgpclient.drs.requests.get")
 def test_download_file(
     mock_get: MagicMock,

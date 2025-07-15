@@ -37,8 +37,8 @@ from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
 
 import cgpclient
-from cgpclient.drs import DrsObject
-from cgpclient.drsupload import upload_files_with_drs
+from cgpclient.drs import CGPDrsClient, DrsObject
+from cgpclient.drsupload import DrsUploader
 from cgpclient.utils import (
     REQUEST_TIMEOUT_SECS,
     CGPClientException,
@@ -137,7 +137,7 @@ CGPClientDevice: Device = Device(
 )
 
 
-class CGPFHIRService:
+class CGPFHIRClient:
     """Service class for FHIR operations, encapsulating client and config"""
 
     def __init__(
@@ -344,13 +344,9 @@ class CGPFHIRService:
     ) -> list[DocumentReference]:
         """Upload the files using the DRS upload protocol and return a
         DocumentReference"""
-        drs_objects: list[DrsObject] = upload_files_with_drs(
-            filenames=filenames,
-            headers=self.headers,
-            api_base_url=self.api_base_url,
-            dry_run=self.dry_run,
-            output_dir=self.output_dir,
-        )
+        drs_client = CGPDrsClient(self.api_base_url, self.headers, self.dry_run)
+        uploader = DrsUploader(drs_client)
+        drs_objects: list[DrsObject] = uploader.upload_files(filenames, self.output_dir)
 
         return [
             self.document_reference_for_drs_object(
