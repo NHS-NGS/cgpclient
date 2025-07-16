@@ -14,10 +14,11 @@ nav:
     - Uses: uses/uses.md
     - Fetching Files: uses/fetching_files.md
     - dWGS: uses/upload_dragen_run.md
-  - Contributing: contributing.md
   - Training:
     - Training: training/training.md
     - dWGS Upload: training/dwgs_upload.md
+    - IGV.js Integration: training/htsget-igv-integration.md
+  - Contributing: contributing.md
 
 theme:
   name: material

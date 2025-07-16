@@ -24,4 +24,10 @@ We regularly run live workshops, and you can also explore our self-paced trainin
     * List available files
     * Download datasets
 
-    [**Start the dWGS Upload Training** :material-arrow-right:](dwgs_upload.md){ .md-button .md-button--primary }
+    [**Start the Training** :material-arrow-right:](dwgs_upload.md){ .md-button .md-button--secondary }
+
+!!! gel-question "Stream genomic data for IGV"
+
+    This course is for users who want to learn how to use the CGPClient library to stream genomic data via GDAM API to integrate it with IGV.js.
+
+    [**Start the Training* :material-arrow-right:](dwgs_upload.md){ .md-button .md-button--secondary }

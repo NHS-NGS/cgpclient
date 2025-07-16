@@ -1,16 +1,13 @@
 # dWGS Upload Workshop
 
-!!! gel-attention "WIP"
-
-    - Decide on sandbox we could declare here and leave open for folks to try it out.
-
-## Orientation
-
 This course is for users who want to learn how to use the CGPClient library to:
 
 * Upload Dragen runs
 * List available files
 * Download datasets
+
+
+## Orientation
 
 ### Environment Setup
 
