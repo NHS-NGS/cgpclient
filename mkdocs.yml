@@ -67,6 +67,11 @@ theme:
 extra_css:
   - assets/stylesheets/extra.css
 
+extra:
+  analytics:
+    provider: google
+    property: G-884NKBZR97
+
 markdown_extensions:
   - attr_list
   - pymdownx.superfences:
