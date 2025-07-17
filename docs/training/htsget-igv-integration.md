@@ -1,7 +1,8 @@
 # Visualising Genomic Data with IGV.js Workshop
 
 ## About This Workshop
-This workshop teaches you how to use the CGPClient library to stream Whole Genome Sequencing (WGS) genomic data files from the Genomics Medicine Service (GMS) through the HTSGET protocol.
+
+This workshop teaches you how to use the CGPClient library to stream Whole Genome Sequencing (WGS) genomic data files from the Genomics Medicine Service (GMS) through the HTSGET protocol and visualize them with IGV.js.
 
 **Learning Objectives**
 
@@ -12,75 +13,140 @@ By the end of this workshop, you will be able to:
 - Stream WGS genomic data (BAM, CRAM, VCF) via HTSGET protocol
 - Integrate genomic data with IGV.js for visualization
 
-**What is HTSGET?**
+**Key Technologies**
 
-[HTSGET](https://samtools.github.io/hts-specs/htsget.html) is a protocol that enables fast, indexed access to genomic data. It supports BAM, CRAM and VCF files.
-
-**Why Use IGV.js?**
-
-[IGV (Integrative Genomics Viewer)](https://igv.org/) is widely used by Clinical Scientists for interactive visualization of genomic data, enabling them to quality check variants, examine read alignments and calls, and ultimately make informed clinical decisions.
-
+- **[HTSGET](https://samtools.github.io/hts-specs/htsget.html)**: A protocol for fast, indexed access to genomic data over HTTP. Instead of downloading entire files, it streams only specific genomic regions, dramatically reducing bandwidth and improving performance.
+- **[IGV (Integrative Genomics Viewer)](https://igv.org/)**: The web-based version of the widely-used Integrative Genomics Viewer, enabling Clinical Scientists to quality check variants, examine read alignments, and make informed clinical decisions directly in the browser.
 
 ## Environment Setup
 
-### Install CGPClient
+### 1. Clone and Set Up CGPClient
+
+Clone the repository and navigate to the project directory:
 
 ```bash
 git clone https://github.com/NHS-NGS/cgpclient
+cd cgpclient
 ```
 
-For this, we're going to assume you use conda for managing python environments, substitute thi for your preferred tool.
+Create and activate a Python environment (using conda):
 
 ```bash
+# Create and activate environment
 conda create --name=cgpclient python=3.13
 conda activate cgpclient
 ```
 
-The environment only needs to be set up once and can be reused. We use poetry to manage dependencies etc., so if you have a fresh new environment from the command above you first need to install poetry:
+!!! gel-magnify "Environment Management"
+    The environment only needs to be set up once and can be reused across multiple workshop sessions.
+
+### 2. Install Dependencies
+
+Install Poetry for dependency management:
 
 ```bash
 pip install poetry
 ```
 
-Once you have poetry installed in a suitable python environment, and if you are in the directory containing this README then the following command will install the client library and dependencies.
+Install the client library and dependencies:
 
 ```bash
 poetry install
 ```
 
+### 3. Verify Installation
 
-## Part 1: Authentication Setup
+Test that everything is installed correctly:
 
-### Step 1: Register in the NHS API Platform (APIM)
+```bash
+python -c "import cgpclient; print('CGPClient installed successfully')"
+```
 
-1. Navigate to the NHS Developer Hub: https://dos-internal.ptl.api.platform.nhs.uk/
-2. **Log in** or create an account (NHS.net email may be required)
-3. Go to **Environment access** → **My applications and teams**
-4. Click **Add new application**
-5. Fill in your application details and save
+If you encounter errors, ensure you're in the correct conda environment and that all dependencies were installed properly.
 
-### Step 2: Add the GDAM API
+
+## Authentication Setup
+
+The NHS API Platform uses JWT (JSON Web Token) authentication with API keys. You'll need to register your application and obtain three key pieces of information: API Key, Private Key PEM, and APIM KID.
+
+!!! info "Authentication Reference"
+    For detailed authentication methods and troubleshooting, see the [Authentication Guide](../set_up/auth.md)
+
+### Step 1: Register in the NHS API Platform
+
+1. Navigate to the NHS Developer Hub: [https://dos-internal.ptl.api.platform.nhs.uk/](https://dos-internal.ptl.api.platform.nhs.uk/)
+2. **Log in** with your NHS.net email address or create an account
+
+### Step 2: Create Your Application
+
+1. Go to **Environment access** → **My applications and teams**
+2. Click **Add new application**
+3. Fill in your application details:
+   - **Environment**: Select 'Development' (for this workshop)
+   - **Owner**: Select 'Me'
+   - **Name**: Choose a descriptive name (e.g., "test-igv-workshop")
+4. Click **Create Application**
+
+![Guide to create application in APIM](../assets/img/create_app_in_apim.jpg)
+
+### Step 3: Connect the GDAM API
 
 1. In your application dashboard, find the **Connected APIs** section
 2. Click **Add APIs**
-3. Search for "GDAM API" 
-4. Select the version that explicitly mentions **API key authentication**
-5. Add the API to your application
+3. Search for "GDAM API" and select the version that explicitly mentions **API key authentication**
+4. Click **Add** to connect the API to your application
 
-### Step 3: Retrieve Authentication Credentials
+You should now see the linked API in your application dashboard.
 
-You'll need three pieces of information:
+![Guide to connect API to the application](../assets/img/link_api_in_apim.png)
 
-- **API Key**: Your application's API key
-- **Private Key PEM**: Your application's private key
-- **APIM KID**: Key identifier for your application
+### Step 4: Generate Your API Key and Private Key
 
-To find these:
-1. In your application dashboard, locate the **Active API keys** section
-2. Click **Edit** to view your API key and secret
-3. Note down these credentials securely
+#### Get Your API Key (KID)
+1. In your application dashboard, select **Active API keys**
+2. Copy your **Key** - this is your KID (Key Identifier)
 
-For detailed authentication methods, see the [Authentication Guide](../set_up/auth.md) or the official NHS documentation: https://digital.nhs.uk/developer/guides-and-documentation/security-and-authorisation/application-restricted-restful-apis-signed-jwt-authentication
+![Get KID](../assets/img/get_apim_key.png)
 
+#### Generate Your Private Key
+Use the CGPClient script to generate the required keys:
 
+```bash
+cgpclient/scripts/create_apim_keys.sh -k YOUR_API_KEY -d ~/.cgpclient/test-1.pem
+```
 
+Replace `YOUR_API_KEY` with the key you copied from the NHS Developer Hub.
+
+**Expected output:**
+```bash
+Output directory '{private_key_pem}' does not exist. Creating it...
+Generating RSA private key, 4096 bit long modulus (2 primes)
+...
+Key pair and JWKS JSON created successfully for KID: {YOUR_API_KEY} in directory: ~/.cgpclient/
+```
+
+### Step 5: Configure CGPClient
+
+Create the configuration directory and file:
+
+```bash
+mkdir -p ~/.cgpclient
+nano ~/.cgpclient/config.yaml
+```
+
+Add the following configuration (replace the placeholder values):
+
+```yaml
+api_host: internal-dev.api.service.nhs.uk 
+api_name: genomic-data-access
+api_key: YOUR_API_KEY_HERE  # API key from the NHS Developer Hub
+private_key_pem: /absolute/path/to/test-1.pem # Path to your private key
+apim_kid: test-1  # Key ID (KID) associated with the key pair
+output_dir: /tmp/output  # Directory for output files
+verbose: true  # Enable verbose logging
+pretty_print: true  # Format output for readability
+```
+
+## Part 2: Discovering Available Genomic Files
+
+### Using the CGPClient to List Files
