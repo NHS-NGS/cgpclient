@@ -200,8 +200,8 @@ participant_id  p12345678301
 sample_id       LP1000000-DNA_B05
 run_id          [run_identifier]
 name            LP1000000-DNA_B05.cram
-s3_url          s3://mr459-dev-cgp-objects/2025/07/07/496fe8c9-d3bf-441f-b640-dd1ae3086e6b/LP1000000-DNA_B05.cram
-htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/1f271be3-7f3d-4cfa-8a1d-31f11a5f6427
+s3_url          s3://mr459-dev-cgp-objects/2025/07/07/1115347ff-8f5e-5fe8-5f8ef-5f9e2f/LP1000000-DNA_B05.cram
+htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/1115347ff-8f5e-5fe8-5f8ef-5f9e2f
 ```
 
 **Key fields:**
@@ -238,23 +238,3 @@ curl -v -H "apikey: {YOUR API KEY}" \
 - `end=4321`: End position (exclusive)
 
 This targeted approach means you only retrieve reads overlapping your region of interest, rather than the entire file.
-
-#### Using HTSGET URLs in IGV.js
-
-The `htsget_url` from your file discovery output can be used directly in IGV.js. IGV.js will automatically append the appropriate parameters when you navigate to different genomic regions:
-
-```javascript
-// Example IGV.js configuration
-const options = {
-    tracks: [
-        {
-            type: 'alignment',
-            format: 'cram',
-            name: 'LP1000000-DNA_B05',
-            url: '{HTSGET URL}'
-        }
-    ]
-};
-```
-
-WIP - This is currently causing an error.
