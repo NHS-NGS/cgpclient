@@ -213,8 +213,6 @@ htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/hts
 
 ## Streaming Data to IGV.js
 
-## Streaming Data to IGV.js
-
 With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV.js for visualization.
 
 ### Setting Up IGV.js
