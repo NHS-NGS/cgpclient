@@ -147,6 +147,52 @@ verbose: true  # Enable verbose logging
 pretty_print: true  # Format output for readability
 ```
 
-## Part 2: Discovering Available Genomic Files
+## Discovering Available Genomic Files
 
 ### Using the CGPClient to List Files
+
+List files for a specific referral
+
+cgpclient/scripts/list_files --referral_id r30000000001
+
+
+this is getting data directly from cnfig file, if you used another location, define it as   -cfg CONFIG_FILE, --config_file CONFIG_FILE
+                        Configuration YAML file (default ~/.cgpclient/config.yaml)
+
+cgpclient/scripts/list_files \
+--referral_id r30000000001 \
+--api_host sandbox.api.service.nhs.uk \
+--api_name genomic-data-access \
+--api_key $API_KEY
+```
+
+### Understanding the Output
+
+The script returns detailed information about each genomic file:
+
+```bash
+last_updated            ngis_category           content_type                    size    author_ods_code         referral_id        participant_id          sample_id               run_id          name
+2025-07-07T14:03:28     BigWig                  application/bigwig                      8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.GRCh38DecoyAltHLA_NonN_Regions_autosomes_sex_mt.CHR_full_res.bw
+2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.repeats.vcf.gz.tbi
+2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.cram.crai
+2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.enhanced.cnv.vcf.gz
+2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678303            LP1000000-DNA_B07                       LP1000000-DNA_B07.cnv.vcf.gz
+2025-07-07T14:03:28     VCF_small               application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       r30000000001_0011_LP1000000-DNA_B05.vcf.gz
+2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cnv.vcf.gz.tbi
+2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cnv.vcf.gz
+2025-07-07T14:03:28     VCF_SV                  application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.repeats.vcf.gz
+2025-07-07T14:03:28     CRAM                    application/cram                        8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cram
+2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.enhanced.cnv.vcf.gz.tbi                                                |
+
+```
+
+## Streaming Data to IGV.js
+
+### Get the HTSGET URL
+
+
+### Using the HTSget url in IGV.js to get sequencing reads for our cram file
+
+
+
+docs: https://cnfl.extge.co.uk/display/CD/GDAM%3A+API+Tutorial
