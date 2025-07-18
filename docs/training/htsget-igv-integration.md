@@ -143,56 +143,120 @@ api_key: YOUR_API_KEY_HERE  # API key from the NHS Developer Hub
 private_key_pem: /absolute/path/to/test-1.pem # Path to your private key
 apim_kid: test-1  # Key ID (KID) associated with the key pair
 output_dir: /tmp/output  # Directory for output files
-verbose: true  # Enable verbose logging
 pretty_print: true  # Format output for readability
 ```
 
 ## Discovering Available Genomic Files
 
-### Using the CGPClient to List Files
 
-List files for a specific referral
+### Understanding the List Files Command
 
+The `list_files` script queries the [Genomic Data Access and Management (GDAM) API](https://digital.nhs.uk/developer/api-catalogue/genomic-data-access-and-managementApi) to securely obtain file information through the [DocumentReference](https://digital.nhs.uk/developer/api-catalogue/genomic-data-access-and-management#get-/FHIR/R4/DocumentReference) endpoint.
+
+### Basic File Discovery
+
+List all files for a specific referral:
+
+```bash
 cgpclient/scripts/list_files --referral_id r30000000001
+```
 
+!!! info "Configuration File"
+    This command uses your default configuration file at `~/.cgpclient/config.yaml`. If you used a different location, specify it with: `-cfg CONFIG_FILE` or `--config_file CONFIG_FILE`
 
-this is getting data directly from cnfig file, if you used another location, define it as   -cfg CONFIG_FILE, --config_file CONFIG_FILE
-                        Configuration YAML file (default ~/.cgpclient/config.yaml)
+### Filtering for Specific Files
 
+To retrieve specific file types (e.g., CRAM files for a proband), use filtering options:
+
+```bash
 cgpclient/scripts/list_files \
 --referral_id r30000000001 \
---api_host sandbox.api.service.nhs.uk \
---api_name genomic-data-access \
---api_key $API_KEY
+--participant_id p12345678301 \
+--mime_type application/cram \
+--include_drs_access_urls \
+--pivot
 ```
+
+**Command breakdown:**
+- `--referral_id`: Filters to a specific referral (family/case)
+- `--participant_id`: Filters to a specific participant within the referral
+- `--mime_type`: Filters by file type (application/cram, application/vcf, etc.)
+- `--include_drs_access_urls`: Includes HTSGET URLs for streaming
+- `--pivot`: Formats output for easier reading
 
 ### Understanding the Output
 
 The script returns detailed information about each genomic file:
 
 ```bash
-last_updated            ngis_category           content_type                    size    author_ods_code         referral_id        participant_id          sample_id               run_id          name
-2025-07-07T14:03:28     BigWig                  application/bigwig                      8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.GRCh38DecoyAltHLA_NonN_Regions_autosomes_sex_mt.CHR_full_res.bw
-2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.repeats.vcf.gz.tbi
-2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.cram.crai
-2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.enhanced.cnv.vcf.gz
-2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678303            LP1000000-DNA_B07                       LP1000000-DNA_B07.cnv.vcf.gz
-2025-07-07T14:03:28     VCF_small               application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       r30000000001_0011_LP1000000-DNA_B05.vcf.gz
-2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cnv.vcf.gz.tbi
-2025-07-07T14:03:28     VCF_SV_CNV              application/vcf                         8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cnv.vcf.gz
-2025-07-07T14:03:28     VCF_SV                  application/vcf                         8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.repeats.vcf.gz
-2025-07-07T14:03:28     CRAM                    application/cram                        8J834                   r30000000001       p12345678302            LP1000000-DNA_E11                       LP1000000-DNA_E11.cram
-2025-07-07T14:03:28     index                   application/octet-stream                8J834                   r30000000001       p12345678301            LP1000000-DNA_B05                       LP1000000-DNA_B05.enhanced.cnv.vcf.gz.tbi                                                |
-
+file property   value
+last_updated    2025-07-07T14:03:28
+ngis_category   CRAM
+content_type    application/cram
+size            [file_size]
+author_ods_code 8J834
+referral_id     r30000000001
+participant_id  p12345678301
+sample_id       LP1000000-DNA_B05
+run_id          [run_identifier]
+name            LP1000000-DNA_B05.cram
+s3_url          s3://mr459-dev-cgp-objects/2025/07/07/496fe8c9-d3bf-441f-b640-dd1ae3086e6b/LP1000000-DNA_B05.cram
+htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/1f271be3-7f3d-4cfa-8a1d-31f11a5f6427
 ```
+
+**Key fields:**
+- `name`: The original filename
+- `s3_url`: Direct S3 location (for reference)
+- `htsget_url`: The streaming URL we'll use with IGV.js
+- `mime_type`: File format (CRAM, VCF, etc.)
+- `size`: File size in bytes
 
 ## Streaming Data to IGV.js
 
-### Get the HTSGET URL
+## Streaming Data to IGV.js
 
+With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV.js for visualization.
 
-### Using the HTSget url in IGV.js to get sequencing reads for our cram file
+### Setting Up IGV.js
 
+IGV.js can be integrated into web applications or used standalone. The HTSGET URL from the previous step allows IGV.js to stream only the genomic regions you're viewing, rather than downloading entire files.
 
+### Understanding HTSGET Parameters
 
-docs: https://cnfl.extge.co.uk/display/CD/GDAM%3A+API+Tutorial
+The HTSGET protocol allows you to specify genomic regions of interest by supplying parameters to the endpoint. When accessing reads data, you can limit the region using `referenceName`, `start`, and `end` parameters.
+
+#### Direct HTSGET API Call Example
+
+You can test the HTSGET endpoint directly using curl:
+
+```bash
+curl -v -H "apikey: {YOUR API KEY}" \
+'{HTSGET URL}?referenceName=chr1&start=1234&end=4321'
+```
+
+**Parameters explained:**
+- `referenceName=chr1`: Chromosome or contig name
+- `start=1234`: Start position (0-based)
+- `end=4321`: End position (exclusive)
+
+This targeted approach means you only retrieve reads overlapping your region of interest, rather than the entire file.
+
+#### Using HTSGET URLs in IGV.js
+
+The `htsget_url` from your file discovery output can be used directly in IGV.js. IGV.js will automatically append the appropriate parameters when you navigate to different genomic regions:
+
+```javascript
+// Example IGV.js configuration
+const options = {
+    tracks: [
+        {
+            type: 'alignment',
+            format: 'cram',
+            name: 'LP1000000-DNA_B05',
+            url: '{HTSGET URL}'
+        }
+    ]
+};
+```
+
+WIP - This is currently causing an error.
