@@ -19,8 +19,8 @@ from cgpclient.drs import (
     AccessURL,
     Checksum,
     ChecksumType,
+    CGPDrsClient,
     DrsObject,
-    post_drs_object,
 )
 from cgpclient.htsget import htsget_base_url, mime_type_to_htsget_endpoint
 from cgpclient.utils import REQUEST_TIMEOUT_SECS, CGPClientException, md5sum
@@ -144,174 +144,144 @@ class S3Url(BaseModel):
     key: str
 
 
-def guess_mime_type(filename: Path) -> str:
-    (mime_type, _) = mimetypes.guess_type(filename)
-    if mime_type is not None:
-        return mime_type
-    raise CGPClientException(f"Unable to guess MIME type for file: {filename}")
+class S3Client:
+    """Handles S3 upload operations"""
 
+    def __init__(self, dry_run: bool = False):
+        self.dry_run = dry_run
 
-def _request_upload(
-    upload_request: DrsUploadRequest,
-    headers: dict,
-    api_base_url: str,  # type: ignore
-) -> DrsUploadResponse:
-    """Request upload details from the DRS server"""
-    log.info("Requesting upload")
-
-    log.debug(upload_request.model_dump_json(exclude_defaults=True))
-
-    response: requests.Response = requests.post(
-        url=f"https://{api_base_url}/upload-request",
-        headers=headers,
-        timeout=REQUEST_TIMEOUT_SECS,
-        json=upload_request.model_dump(),
-    )
-    response.raise_for_status()
-
-    if response.ok:
-        log.info("Upload request successful")
-        drs_response: DrsUploadResponse = DrsUploadResponse.model_validate(
-            response.json()
-        )
-        log.debug(drs_response.model_dump_json(exclude_defaults=True))
-        return drs_response
-
-    raise CGPClientException("Upload request failed")
-
-
-def parse_s3_url(s3_url: str) -> S3Url:
-    """Parse an S3 URL into an S3Url object"""
-    bucket, key = s3_url.replace("s3://", "").split("/", 1)
-    return S3Url(bucket=bucket, key=key)
-
-
-def _upload_file_to_s3(
-    filename: Path, upload_method: DrsUploadMethod, dry_run: bool = False
-) -> None:
-    """Upload the provided file to S3 using the details in the supplied upload method"""
-    if upload_method.type != DrsUploadMethodType.S3:
-        raise CGPClientException(f"Invalid upload_method type: {upload_method.type}")
-
-    if dry_run:
-        log.info("Dry run, so skipping uploading S3 object")
-        return
-
-    try:
-        s3 = boto3.client(
-            "s3",
-            aws_access_key_id=upload_method.credentials["AccessKeyId"],
-            aws_secret_access_key=upload_method.credentials["SecretAccessKey"],
-            aws_session_token=upload_method.credentials["SessionToken"],
-            region_name=upload_method.region,
-        )
-    except KeyError as e:
-        raise CGPClientException("Missing necessary AWS credentials") from e
-    except Exception as e:
-        raise CGPClientException("Error creating S3 client") from e
-
-    try:
-        s3_url: str = upload_method.access_url.url
-        parsed_url: S3Url = parse_s3_url(s3_url=s3_url)
-        log.info("Uploading %s", filename)
-        s3.upload_file(filename, Bucket=parsed_url.bucket, Key=parsed_url.key)
-        log.info("Uploaded successfully to %s", s3_url)
-    except Exception as e:
-        raise CGPClientException("Error uploading file to S3") from e
-
-
-def _create_upload_request_object(
-    filenames: list[Path],
-) -> list[DrsUploadRequestObject]:
-    objects: list[DrsUploadRequestObject] = []
-    for filename in filenames:
-        objects.append(
-            DrsUploadRequestObject(
-                name=filename.name,
-                checksums=[Checksum(type=ChecksumType.MD5, checksum=md5sum(filename))],
-                size=filename.stat().st_size,
-                mime_type=guess_mime_type(filename),
+    def upload_file(self, filename: Path, upload_method: DrsUploadMethod) -> None:
+        """Upload file to S3 using the upload method details"""
+        if upload_method.type != DrsUploadMethodType.S3:
+            raise CGPClientException(
+                f"Invalid upload_method type: {upload_method.type}"
             )
-        )
-    return objects
 
+        if self.dry_run:
+            log.info("Dry run, so skipping uploading S3 object")
+            return
 
-def _create_upload_request(filenames: list[Path]) -> DrsUploadRequest:
-    """Create a DrsUploadRequest object for the files"""
-    return DrsUploadRequest(objects=_create_upload_request_object(filenames=filenames))
-
-
-def _get_upload_response_object(
-    filenames: list[Path], api_base_url: str, headers: dict
-) -> dict[str, DrsUploadResponseObject]:
-    """Request to upload the file to the DRS server"""
-    upload_request: DrsUploadRequest = _create_upload_request(filenames=filenames)
-
-    upload_response: DrsUploadResponse = _request_upload(
-        upload_request=upload_request, api_base_url=api_base_url, headers=headers
-    )
-
-    return upload_response.objects
-
-
-def _upload_file_with_upload_response_object(
-    filename: Path,
-    upload_response_object: DrsUploadResponseObject,
-    headers: dict,
-    api_base_url: str,
-    dry_run: bool,
-    output_dir: Path | None = None,
-) -> DrsObject:
-    s3_upload_method: DrsUploadMethod = upload_response_object.get_upload_method(
-        upload_method_type=DrsUploadMethodType.S3  # type: ignore
-    )
-
-    _upload_file_to_s3(
-        filename=filename, upload_method=s3_upload_method, dry_run=dry_run
-    )
-
-    drs_object: DrsObject = upload_response_object.to_drs_object(
-        upload_method=s3_upload_method, api_base_url=api_base_url
-    )
-
-    post_drs_object(
-        drs_object,
-        api_base_url=api_base_url,
-        headers=headers,
-        dry_run=dry_run,
-        output_dir=output_dir,
-    )
-
-    return drs_object
-
-
-def upload_files_with_drs(
-    filenames: list[Path],
-    headers: dict,
-    api_base_url: str,
-    dry_run: bool,
-    output_dir: Path | None = None,
-) -> list[DrsObject]:
-    """Upload the file following the DRS upload protocol"""
-
-    upload_response_objects: dict[str, DrsUploadResponseObject] = (
-        _get_upload_response_object(
-            filenames=filenames, headers=headers, api_base_url=api_base_url
-        )
-    )
-
-    drs_objects: list[DrsObject] = []
-
-    for filename in filenames:
-        drs_objects.append(
-            _upload_file_with_upload_response_object(
-                filename=filename,
-                upload_response_object=upload_response_objects[str(filename.name)],
-                headers=headers,
-                api_base_url=api_base_url,
-                dry_run=dry_run,
-                output_dir=output_dir,
+        try:
+            s3 = boto3.client(
+                "s3",
+                aws_access_key_id=upload_method.credentials["AccessKeyId"],
+                aws_secret_access_key=upload_method.credentials["SecretAccessKey"],
+                aws_session_token=upload_method.credentials["SessionToken"],
+                region_name=upload_method.region,
             )
+        except KeyError as e:
+            raise CGPClientException("Missing necessary AWS credentials") from e
+        except Exception as e:
+            raise CGPClientException("Error creating S3 client") from e
+
+        try:
+            s3_url = upload_method.access_url.url
+            parsed_url = self._parse_s3_url(s3_url)
+            log.info("Uploading %s", filename)
+            s3.upload_file(filename, Bucket=parsed_url.bucket, Key=parsed_url.key)
+            log.info("Uploaded successfully to %s", s3_url)
+        except Exception as e:
+            raise CGPClientException("Error uploading file to S3") from e
+
+    def _parse_s3_url(self, s3_url: str) -> S3Url:
+        """Parse an S3 URL into an S3Url object"""
+        bucket, key = s3_url.replace("s3://", "").split("/", 1)
+        return S3Url(bucket=bucket, key=key)
+
+
+class DrsUploader:
+    """Handles DRS file upload operations"""
+
+    def __init__(self, drs_client: CGPDrsClient, s3_client: S3Client | None = None):
+        self.drs_client = drs_client
+        self.s3_client = s3_client or S3Client(drs_client.dry_run)
+
+    def upload_files(
+        self, filenames: list[Path], output_dir: Path | None = None
+    ) -> list[DrsObject]:
+        """Upload files following the DRS upload protocol"""
+        upload_response_objects = self._get_upload_response_objects(filenames)
+        drs_objects = []
+
+        for filename in filenames:
+            drs_objects.append(
+                self._upload_file_with_response_object(
+                    filename=filename,
+                    upload_response_object=upload_response_objects[str(filename.name)],
+                    output_dir=output_dir,
+                )
+            )
+
+        return drs_objects
+
+    def _get_upload_response_objects(
+        self, filenames: list[Path]
+    ) -> dict[str, DrsUploadResponseObject]:
+        """Request upload details from the DRS server"""
+        upload_request = self._create_upload_request(filenames)
+        upload_response = self._request_upload(upload_request)
+        return upload_response.objects
+
+    def _create_upload_request(self, filenames: list[Path]) -> DrsUploadRequest:
+        """Create a DrsUploadRequest object for the files"""
+        objects = []
+        for filename in filenames:
+            objects.append(
+                DrsUploadRequestObject(
+                    name=filename.name,
+                    checksums=[
+                        Checksum(type=ChecksumType.MD5, checksum=md5sum(filename))
+                    ],
+                    size=filename.stat().st_size,
+                    mime_type=self._guess_mime_type(filename),
+                )
+            )
+        return DrsUploadRequest(objects=objects)
+
+    def _request_upload(self, upload_request: DrsUploadRequest) -> DrsUploadResponse:
+        """Request upload details from the DRS server"""
+        log.info("Requesting upload")
+        log.debug(upload_request.model_dump_json(exclude_defaults=True))
+
+        response = requests.post(
+            url=f"https://{self.drs_client.api_base_url}/upload-request",
+            headers=self.drs_client.headers,
+            timeout=REQUEST_TIMEOUT_SECS,
+            json=upload_request.model_dump(),
+        )
+        response.raise_for_status()
+
+        if response.ok:
+            log.info("Upload request successful")
+            drs_response = DrsUploadResponse.model_validate(response.json())
+            log.debug(drs_response.model_dump_json(exclude_defaults=True))
+            return drs_response
+
+        raise CGPClientException("Upload request failed")
+
+    def _upload_file_with_response_object(
+        self,
+        filename: Path,
+        upload_response_object: DrsUploadResponseObject,
+        output_dir: Path | None = None,
+    ) -> DrsObject:
+        """Upload a single file using the upload response object"""
+        s3_upload_method = upload_response_object.get_upload_method(
+            upload_method_type=DrsUploadMethodType.S3
         )
 
-    return drs_objects
+        self.s3_client.upload_file(filename=filename, upload_method=s3_upload_method)
+
+        drs_object = upload_response_object.to_drs_object(
+            upload_method=s3_upload_method, api_base_url=self.drs_client.api_base_url
+        )
+
+        self.drs_client.post_drs_object(drs_object, output_dir)
+        return drs_object
+
+    def _guess_mime_type(self, filename: Path) -> str:
+        """Guess MIME type from filename"""
+        (mime_type, _) = mimetypes.guess_type(filename)
+        if mime_type is not None:
+            return mime_type
+        raise CGPClientException(f"Unable to guess MIME type for file: {filename}")

@@ -7,9 +7,8 @@ import pytest
 
 from cgpclient.client import CGPClient
 from cgpclient.drs import (
+    CGPDrsClient,
     DrsObject,
-    _get_drs_object_from_https_url,
-    get_drs_object,
     map_drs_to_https_url,
 )
 from cgpclient.utils import CGPClientException
@@ -61,60 +60,54 @@ def test_get_object_from_https_url(
             return drs_object
 
     mock_server.return_value = MockedResponse()
+    drs_client = CGPDrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
 
     with pytest.raises(CGPClientException):
-        _get_drs_object_from_https_url(https_url="foo", headers=client.headers)
+        drs_client._get_drs_object_from_https_url(https_url="foo")
 
     with pytest.raises(CGPClientException):
-        _get_drs_object_from_https_url(https_url="drs://foo", headers=client.headers)
+        drs_client._get_drs_object_from_https_url(https_url="drs://foo")
 
-    drs_response: DrsObject = _get_drs_object_from_https_url(
-        https_url="https://foo", headers=client.headers
+    drs_response: DrsObject = drs_client._get_drs_object_from_https_url(
+        https_url="https://foo"
     )
 
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
 
 
-@patch("cgpclient.drs._get_drs_object_from_https_url")
+@patch("cgpclient.drs.CGPDrsClient._get_drs_object_from_https_url")
 def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPClient):
     md5_hash: str = "MD5HASH"
     drs_object["checksums"][0]["checksum"] = md5_hash
     mock_get_object.return_value = DrsObject.model_validate(drs_object)
+    drs_client = CGPDrsClient(
+        client.api_base_url,
+        client.headers,
+        client.dry_run,
+        client.override_api_base_url,
+    )
 
     with pytest.raises(CGPClientException):
-        get_drs_object(
-            drs_url=drs_object["id"],
-            headers=client.headers,
-            api_base_url=client.api_base_url,
-            override_api_base_url=client.override_api_base_url,
-        )
+        drs_client.get_drs_object(drs_url=drs_object["id"])
 
     with pytest.raises(CGPClientException):
-        get_drs_object(
+        drs_client.get_drs_object(
             drs_url=drs_object["self_uri"],
-            headers=client.headers,
-            api_base_url=client.api_base_url,
-            override_api_base_url=client.override_api_base_url,
             expected_hash="foo",
         )
 
     # test we don't raise with no expected hash
     try:
-        get_drs_object(
-            drs_url=drs_object["self_uri"],
-            headers=client.headers,
-            api_base_url=client.api_base_url,
-            override_api_base_url=client.override_api_base_url,
-        )
+        drs_client.get_drs_object(drs_url=drs_object["self_uri"])
     except CGPClientException:
         assert False
 
-    drs_response: DrsObject = get_drs_object(
-        drs_url=drs_object["self_uri"],
-        api_base_url=client.api_base_url,
-        override_api_base_url=client.override_api_base_url,
-        headers=client.headers,
-    )
+    drs_response: DrsObject = drs_client.get_drs_object(drs_url=drs_object["self_uri"])
     assert drs_response.model_dump(exclude_defaults=True) == drs_object
     mock_get_object.assert_called()
 

@@ -19,7 +19,7 @@ from fhir.resources.R4B.specimen import Specimen
 from pydantic import BaseModel, PositiveInt
 
 from cgpclient.fhir import (  # type: ignore
-    CGPFHIRService,
+    CGPFHIRClient,
     DocumentReferenceRelationship,
     FHIRConfig,
     ProcedureStatus,
@@ -82,7 +82,7 @@ def read_fastq_list(
 @typing.no_type_check
 def fastq_list_entry_to_document_references(
     entry: FastqListEntry,
-    fhir_service: CGPFHIRService,
+    fhir_service: CGPFHIRClient,
 ) -> list[DocumentReference]:
     """Create a list of DocumentReferences for each FASTQ in a read group"""
     # Upload FASTQs using DRS
@@ -212,7 +212,7 @@ def create_procedure(fhir_config: FHIRConfig) -> Procedure:
 @typing.no_type_check
 def map_entries_to_bundle(
     entries: list[FastqListEntry],
-    fhir_service: CGPFHIRService,
+    fhir_service: CGPFHIRClient,
     run_info_file: Path | None = None,
 ) -> Bundle:
     """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
@@ -248,7 +248,7 @@ def map_entries_to_bundle(
 
 def upload_dragen_run(
     fastq_list_csv: Path,
-    fhir_service: CGPFHIRService,
+    fhir_service: CGPFHIRClient,
     run_info_file: Path | None = None,
 ) -> None:
     """Convert a FASTQ list CSV into DRS objects and FHIR resources, and upload

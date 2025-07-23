@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from cgpclient.client import CGPClient
-from cgpclient.fhir import CGPFHIRService, FHIRConfig  # type: ignore
+from cgpclient.fhir import CGPFHIRClient, FHIRConfig  # type: ignore
 
 
 @pytest.fixture(scope="function")
@@ -234,7 +234,7 @@ def test_get_resource(mock_get: MagicMock, document_reference: dict) -> None:
 
     config: FHIRConfig = FHIRConfig()
 
-    fhir: CGPFHIRService = CGPFHIRService(
+    fhir: CGPFHIRClient = CGPFHIRClient(
         api_base_url="host", headers={}, config=config, dry_run=False
     )
     resource = fhir.get_resource(resource_id="foo", resource_type="DocumentReference")
@@ -254,7 +254,7 @@ def test_search_resource(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
 
     config: FHIRConfig = FHIRConfig()
 
-    fhir: CGPFHIRService = CGPFHIRService(
+    fhir: CGPFHIRClient = CGPFHIRClient(
         api_base_url="host", headers={}, config=config, dry_run=False
     )
     resource = fhir.search_for_fhir_resource(resource_type="DocumentReference")
@@ -274,7 +274,7 @@ def test_search_doc_refs(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
 
     config: FHIRConfig = FHIRConfig()
 
-    fhir: CGPFHIRService = CGPFHIRService(
+    fhir: CGPFHIRClient = CGPFHIRClient(
         api_base_url="host", headers={}, config=config, dry_run=False
     )
     doc_refs = fhir.search_for_document_references()
@@ -294,7 +294,7 @@ def test_search_serv_reqs(mock_get: MagicMock, serv_req_bundle: dict) -> None:
 
     config: FHIRConfig = FHIRConfig()
 
-    fhir: CGPFHIRService = CGPFHIRService(
+    fhir: CGPFHIRClient = CGPFHIRClient(
         api_base_url="host", headers={}, config=config, dry_run=False
     )
     serv_reqs = fhir.search_for_service_requests()
