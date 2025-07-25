@@ -103,12 +103,14 @@ You should now see the linked API in your application dashboard.
 ### Step 4: Generate Your API Key and Private Key
 
 #### Get Your API Key (KID)
+
 1. In your application dashboard, select **Active API keys**
 2. Copy your **Key** - this is your KID (Key Identifier)
 
 ![Get KID](../assets/img/get_apim_key.png)
 
 #### Generate Your Private Key
+
 Use the CGPClient script to generate the required keys:
 
 ```bash
@@ -178,6 +180,7 @@ cgpclient/scripts/list_files \
 ```
 
 **Command breakdown:**
+
 - `--referral_id`: Filters to a specific referral (family/case)
 - `--participant_id`: Filters to a specific participant within the referral
 - `--mime_type`: Filters by file type (application/cram, application/vcf, etc.)
@@ -205,14 +208,44 @@ htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/hts
 ```
 
 **Key fields:**
+
 - `name`: The original filename
 - `s3_url`: Direct S3 location (for reference)
 - `htsget_url`: The streaming URL we'll use with IGV
 - `mime_type`: File format (CRAM, VCF, etc.)
 - `size`: File size in bytes
 
-## Streaming Data to IGV
+## Streaming Data to IGV.js
 
-With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV for visualization.
+With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV.js for visualization.
 
-Additional information tbc.
+Download the following [IGV.js HTML snippet](./igv_snippet.html) (right click "save as")
+
+!!! warning
+
+    There is a known issue with CORS which means HTSget urls routed via the NHS API platform will not work. 
+
+    We are working with the NHS API platform to find a solution to this
+
+Open the HTML in a text editor and modify the tracks
+
+```javascript
+
+    var options = {
+    supportQueryParameters: true,
+    genome: "hg38",
+    locus: "chr7:42395147-42395347", # specify the region you want to stream here
+    tracks: [
+        {
+        name: 'Reads', # name your track
+        type: 'alignment',
+        format: 'bam',
+        url: 'https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/XXXXXX-XXXX-XXXX-XXXXX-XXXXXX', # insert htsget url from the list files output here
+        sourceType: 'htsget',
+        visibilityWindow: 10000,
+    }]
+}
+
+```
+
+You can repeat for more CRAMs and other files held in GDAM such as VCFs and BigWigs as per the [IGV.js documentation](https://igv.org/doc/igvjs/).
