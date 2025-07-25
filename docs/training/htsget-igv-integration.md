@@ -1,8 +1,8 @@
-# Visualising Genomic Data with IGV.js Workshop
+# Visualising Genomic Data with IGV Workshop
 
 ## About This Workshop
 
-This workshop teaches you how to use the CGPClient library to stream Whole Genome Sequencing (WGS) genomic data files from the Genomics Medicine Service (GMS) through the HTSGET protocol and visualize them with IGV.js.
+This workshop teaches you how to use the CGPClient library to stream Whole Genome Sequencing (WGS) genomic data files from the Genomics Medicine Service (GMS) through the HTSGET protocol and visualize them with IGV.
 
 **Learning Objectives**
 
@@ -11,7 +11,7 @@ By the end of this workshop, you will be able to:
 - Set up authentication with the NHS API Platform (APIM)
 - Use the CGPClient library to discover and access genomic data files
 - Stream WGS genomic data (BAM, CRAM, VCF) via HTSGET protocol
-- Integrate genomic data with IGV.js for visualization
+- Integrate genomic data with IGV for visualization
 
 **Key Technologies**
 
@@ -200,41 +200,19 @@ participant_id  p12345678301
 sample_id       LP1000000-DNA_B05
 run_id          [run_identifier]
 name            LP1000000-DNA_B05.cram
-s3_url          s3://mr459-dev-cgp-objects/2025/07/07/1115347ff-8f5e-5fe8-5f8ef-5f9e2f/LP1000000-DNA_B05.cram
-htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/1115347ff-8f5e-5fe8-5f8ef-5f9e2f
+s3_url          s3://mr459-dev-cgp-objects/2025/07/07/XXXXXX-XXXX-XXXX-XXXXX-XXXXXX/LP1000000-DNA_B05.cram
+htsget_url      https://sandbox.api.service.nhs.uk/genomic-data-access/ga4gh/htsget/v1.3/reads/XXXXXX-XXXX-XXXX-XXXXX-XXXXXX
 ```
 
 **Key fields:**
 - `name`: The original filename
 - `s3_url`: Direct S3 location (for reference)
-- `htsget_url`: The streaming URL we'll use with IGV.js
+- `htsget_url`: The streaming URL we'll use with IGV
 - `mime_type`: File format (CRAM, VCF, etc.)
 - `size`: File size in bytes
 
-## Streaming Data to IGV.js
+## Streaming Data to IGV
 
-With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV.js for visualization.
+With the HTSGET URL obtained from the file discovery step, you can now stream genomic data directly to IGV for visualization.
 
-### Setting Up IGV.js
-
-IGV.js can be integrated into web applications or used standalone. The HTSGET URL from the previous step allows IGV.js to stream only the genomic regions you're viewing, rather than downloading entire files.
-
-### Understanding HTSGET Parameters
-
-The HTSGET protocol allows you to specify genomic regions of interest by supplying parameters to the endpoint. When accessing reads data, you can limit the region using `referenceName`, `start`, and `end` parameters.
-
-#### Direct HTSGET API Call Example
-
-You can test the HTSGET endpoint directly using curl:
-
-```bash
-curl -v -H "apikey: {YOUR API KEY}" \
-'{HTSGET URL}?referenceName=chr1&start=1234&end=4321'
-```
-
-**Parameters explained:**
-- `referenceName=chr1`: Chromosome or contig name
-- `start=1234`: Start position (0-based)
-- `end=4321`: End position (exclusive)
-
-This targeted approach means you only retrieve reads overlapping your region of interest, rather than the entire file.
+Additional information tbc.
