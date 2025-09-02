@@ -52,8 +52,7 @@ class APIKeyAuthProvider:
             return {"apikey": self.api_key}
 
         log.debug("Using standard API key header")
-        # return {"X-API-Key": self.api_key}
-        return {"Authorization": f"Bearer {self.api_key}"}
+        return {"X-API-Key": self.api_key}
 
 class GelBasicAuthProvider:
     """Basic Internal Auth for GeL"""
