@@ -61,12 +61,7 @@ class GelBasicAuthProvider:
         self.api_host = api_host
 
     def get_headers(self) -> dict[str, str]:
-        log.debug("Using API key authentication")
-        if APIM_BASE_URL in self.api_host:
-            logging.debug("Using GeL Internal API key header")
-            return {"apikey": self.api_key}
-
-        log.debug("Using GeL API key header")
+        log.debug("Using internal GeL API key in authentication header")
         return {"Authorization": f"Bearer {self.api_key}"}
 
 class OAuthProvider:
