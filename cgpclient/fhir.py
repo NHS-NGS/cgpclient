@@ -357,7 +357,10 @@ class CGPFHIRClient:
             result = [entry.resource for entry in bundle.entry]
 
         # we can't currently search by orderDetail, so we filter the response
-        if search_params is not None and search_params.clinical_indication is not None:
+        if (
+            search_params is not None
+            and search_params.clinical_indication_code is not None
+        ):
             log.debug(
                 "Filtering ServiceRequests to clinical indication %s",
                 search_params.clinical_indication.coding[0].code,
