@@ -484,32 +484,16 @@ class CGPReferrals:
     ) -> None:
         """Print the list of service requests as a table"""
 
-
         referrals: list[CGPReferral] = self._referrals
 
         if sort_by is not None:
             referrals.sort(key=lambda f: getattr(f, sort_by))
-
 
         short_cols: list[str] = [
             "last_updated",
             "referral_id",
             "proband_participant_id",
         ]
-
-        # # columns to include for summary output
-        # short_cols: list[str] = [
-        #     "last_updated",
-        #     "ngis_category",
-        #     "content_type",
-        #     "size",
-        #     "author_ods_code",
-        #     "referral_id",
-        #     "participant_id",
-        #     "sample_id",
-        #     "run_id",
-        #     "name",
-        # ]
 
         # additional columns (rather verbose)
         all_cols: list[str] = short_cols + []

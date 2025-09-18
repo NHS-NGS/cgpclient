@@ -14,7 +14,7 @@ from cgpclient.fhir import FHIRConfig  # type: ignore
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch details of NGIS referrals associated with the supplied identifiers"
+            "List NGIS referrals associated with the supplied identifiers"
         )
     )
     parser.add_argument(
@@ -192,9 +192,6 @@ def main(cmdline_args: list[str]) -> None:
         pivot=args.pivot,
         include_header=True,
         output=sys.stdout)
-
-    # for referral in referrals._referrals:
-    #     print(referral.referral_id)
 
 
 if __name__ == "__main__":
