@@ -26,6 +26,7 @@ from fhir.resources.R4B.documentreference import (
     DocumentReferenceContext,
 )
 from fhir.resources.R4B.domainresource import DomainResource
+from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.identifier import Identifier
 from fhir.resources.R4B.meta import Meta
 from fhir.resources.R4B.organization import Organization
@@ -35,6 +36,7 @@ from fhir.resources.R4B.provenance import Provenance, ProvenanceAgent
 from fhir.resources.R4B.reference import Reference
 from fhir.resources.R4B.servicerequest import ServiceRequest
 from fhir.resources.R4B.specimen import Specimen
+from fhir.resources.R4B.task import Task
 
 import cgpclient
 from cgpclient.drs import CGPDrsClient, DrsObject
@@ -50,6 +52,7 @@ log = logging.getLogger(__name__)
 
 MAX_SEARCH_RESULTS = 100
 MAX_UNSIGNED_INT = 2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt
+MAX_PAGES = 100
 
 
 # Enumerations for various FHIR resource fields
@@ -187,6 +190,48 @@ class CGPFHIRClient:
             f"status: {response.status_code} response: {response.text}"
         )
 
+    def _search_paged(
+        self,
+        url: str,
+        query_params: dict[str, str] | None = None,
+    ) -> Bundle:
+        """Peform a search request and page through the results"""
+        pages = 1
+        while pages <= MAX_PAGES:
+            response = requests.get(
+                url=url,
+                headers=self.headers,
+                params=query_params,
+                timeout=REQUEST_TIMEOUT_SECS,
+            )
+            if response.ok:
+                bundle = Bundle.parse_obj(response.json())
+                if (
+                    bundle.link
+                    and len(bundle.link) == 1
+                    and bundle.link[0].relation == "next"
+                ):
+                    log.info("Requesting page %i", pages)
+                    # we need to switch the HealthLake URL for one with our prefix
+                    prefix = url.rsplit("/", 1)[0]
+                    suffix = bundle.link[0].url.rsplit("/", 1)[-1]
+                    url = f"{prefix}/{suffix}"
+                    query_params = {}  # reset params as these are baked into the URL
+                    pages += 1
+                else:
+                    return
+            else:
+                raise CGPClientException(f"Failed to fetch from endpoint: {url}")
+        log.info("Reached maximum number of pages")
+
+    def _merge_bundles(self, bundles: list[Bundle]) -> Bundle:
+        """Merge a list of Bundles into a single one, retaining the
+        metadata of the first"""
+        first: Bundle = bundles[0]
+        for bundle in bundles[1:]:
+            first.entry.extend(bundle.entry)
+        return first
+
     def search_for_fhir_resource(
         self,
         resource_type: str,
@@ -206,31 +251,29 @@ class CGPFHIRClient:
         log.info("Requesting endpoint: %s", url)
         log.info("Query parameters: %s", query_params)
 
-        response = requests.get(
-            url=url,
-            headers=self.headers,
-            params=query_params,
-            timeout=REQUEST_TIMEOUT_SECS,
-        )
-        if response.ok:
-            log.debug(response.json())
-            bundle = Bundle.parse_obj(response.json())
-            if (
-                bundle.link
-                and len(bundle.link) == 1
-                and bundle.link[0].relation == "next"
-            ):
-                url = bundle.link[0].url
-                log.info(
-                    "More than %i results for search, implement paging!",
-                    MAX_SEARCH_RESULTS,
-                )
-            return bundle
+        bundles: list[Bundle] = []
 
-        raise CGPClientException(
-            f"Failed to fetch from endpoint: {url} "
-            f"status: {response.status_code} response: {response.text}"
-        )
+        for response in self._search_paged(url=url, query_params=query_params):
+            bundles.append(response)
+
+        return self._merge_bundles(bundles)
+
+    def search_for_tasks(self, search_params: FHIRConfig | None = None) -> list[Task]:
+        query_params: dict[str, str] = {}
+
+        if search_params is not None:
+            if search_params.task_id is not None:
+                query_params["_id"] = search_params.task_id
+
+            if search_params.participant_id is not None:
+                query_params["subject:identifier"] = identifier_search_string(
+                    search_params.participant_identifier
+                )
+
+            if search_params.ods_code is not None:
+                query_params["author:identifier"] = identifier_search_string(
+                    search_params.org_identifier
+                )
 
     def search_for_document_references(
         self, search_params: FHIRConfig | None = None
@@ -274,6 +317,17 @@ class CGPFHIRClient:
             return [entry.resource for entry in bundle.entry]
         return []
 
+    def check_clinical_indication(
+        self, clinical_indication_code: str, service_request: ServiceRequest
+    ) -> bool:
+        details = service_request.orderDetail
+        if details is not None:
+            for detail in details:
+                for coding in detail.coding:
+                    if coding.code == clinical_indication_code:
+                        return True
+        return False
+
     def search_for_service_requests(
         self, search_params: FHIRConfig | None = None
     ) -> list[ServiceRequest]:
@@ -296,9 +350,26 @@ class CGPFHIRClient:
             query_params=query_params,
         )
 
+        result: list[ServiceRequest] = []
+
         if bundle.entry:
-            return [entry.resource for entry in bundle.entry]
-        return []
+            result = [entry.resource for entry in bundle.entry]
+
+        # we can't currently search by orderDetail, so we filter the response
+        if search_params is not None and search_params.clinical_indication is not None:
+            log.debug(
+                "Filtering ServiceRequests to clinical indication %s",
+                search_params.clinical_indication.coding[0].code,
+            )
+            result = [
+                sr
+                for sr in result
+                if self.check_clinical_indication(
+                    search_params.clinical_indication.coding[0].code, sr
+                )
+            ]
+
+        return result
 
     @typing.no_type_check
     def document_reference_for_drs_object(
@@ -326,17 +397,13 @@ class CGPFHIRClient:
                 ),
             ],
             context=DocumentReferenceContext(related=self.config.related_references),
-            meta=Meta(
-                # as a work around to the size limit above, we include the real
-                # file size as a string here as a meta tag
-                tag=[
-                    Coding(
-                        system="https://genomicsengland.co.uk/workaround-attachment-size",
-                        code=f"{drs_object.size}",
-                        display="attachment size in bytes",
-                    )
-                ]
-            ),
+            extension=[
+                # we use an extension to encode the real file size
+                Extension(
+                    url="https://genomicsengland.co.uk/file-size",
+                    valueDecimal=drs_object.size,
+                )
+            ],
         )
 
     def create_drs_document_references(
@@ -589,6 +656,7 @@ class FHIRConfig:
         run_id: str | None = None,
         sample_id: str | None = None,
         tumour_id: str | None = None,
+        clinical_indication_code: str | None = None,
         file_id: str | None = None,
         workspace_id: str | None = None,
         nhs_number: str | None = None,
@@ -600,6 +668,7 @@ class FHIRConfig:
         self.ods_code = ods_code
         self.sample_id = sample_id
         self.tumour_id = tumour_id
+        self.clinical_indication_code = clinical_indication_code
         self.file_id = file_id
         self.workspace_id = workspace_id
         self.nhs_number = nhs_number
@@ -746,6 +815,19 @@ class FHIRConfig:
         return Identifier(
             system=f"https://{self.org_identifier.value}.nhs.uk/tumour-id",
             value=self.tumour_id,
+        )
+
+    @property
+    def clinical_indication(self) -> CodeableConcept:
+        if self.clinical_indication_code is None:
+            raise CGPClientException("No clinical indication code supplied")
+        return CodeableConcept(
+            coding=[
+                Coding(
+                    system="https://fhir.nhs.uk/CodeSystem/England-GenomicTestDirectory",
+                    code=self.clinical_indication_code,
+                )
+            ],
         )
 
     @property

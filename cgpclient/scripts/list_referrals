@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import argparse
-import logging
 import sys
 from pathlib import Path
 
@@ -9,13 +8,12 @@ import yaml  # type: ignore
 
 from cgpclient.client import CGPClient, CGPReferrals
 from cgpclient.fhir import FHIRConfig  # type: ignore
+from cgpclient.utils import setup_logger
 
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=(
-            "List NGIS referrals associated with the supplied identifiers"
-        )
+        description=("List NGIS referrals associated with the supplied identifiers")
     )
     parser.add_argument(
         "-r",
@@ -50,6 +48,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         "--ods_code",
         type=str,
         help="ODS code for your organisation",
+    )
+    parser.add_argument(
+        "-c",
+        "--clinical_indication",
+        type=str,
+        help='Clinical indication code ("R number")',
     )
     parser.add_argument(
         "-a",
@@ -158,17 +162,14 @@ def parse_args(args: list[str]) -> argparse.Namespace:
 def main(cmdline_args: list[str]) -> None:
     args: argparse.Namespace = parse_args(cmdline_args)
 
-    if args.verbose:
-        logging.getLogger(__name__).setLevel(logging.INFO)
-
-    if args.debug:
-        logging.getLogger(__name__).setLevel(logging.DEBUG)
+    setup_logger(verbose=args.verbose, debug=args.debug)
 
     config: FHIRConfig = FHIRConfig(
         ods_code=args.ods_code,
         referral_id=args.referral_id,
         participant_id=args.participant_id,
         tumour_id=args.tumour_id,
+        clinical_indication_code=args.clinical_indication,
         run_id=args.run_id,
         sample_id=args.sample_id,
         workspace_id=args.workspace_id,
@@ -191,7 +192,8 @@ def main(cmdline_args: list[str]) -> None:
         sort_by="last_updated",
         pivot=args.pivot,
         include_header=True,
-        output=sys.stdout)
+        output=sys.stdout,
+    )
 
 
 if __name__ == "__main__":
