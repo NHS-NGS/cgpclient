@@ -411,6 +411,15 @@ class CGPReferral:
         if referral_id is None:
             raise CGPClientException("ServiceRequest with no referral ID")
         return referral_id
+    
+    @property
+    @typing.no_type_check
+    def last_updated(self) -> str | None:
+        if self._service_request.meta and self._service_request.meta.lastUpdated:
+            return self._service_request.meta.lastUpdated.strftime(
+                "%Y-%m-%dT%H:%M:%S"
+            )
+        return None
 
     @property
     @typing.no_type_check
@@ -463,6 +472,79 @@ class CGPReferrals:
             CGPReferral(service_request=serv_req, client=client)
             for serv_req in service_requests
         ]
+
+    def print_table(
+        self,
+        summary: bool = False,
+        sort_by: str | None = None,
+        table_format: str = "tsv",
+        pivot: bool = False,
+        include_header: bool = True,
+        output: TextIO = sys.stdout,
+    ) -> None:
+        """Print the list of service requests as a table"""
+
+
+        referrals: list[CGPReferral] = self._referrals
+
+        if sort_by is not None:
+            referrals.sort(key=lambda f: getattr(f, sort_by))
+
+
+        short_cols: list[str] = [
+            "last_updated",
+            "referral_id",
+            "proband_participant_id",
+        ]
+
+        # # columns to include for summary output
+        # short_cols: list[str] = [
+        #     "last_updated",
+        #     "ngis_category",
+        #     "content_type",
+        #     "size",
+        #     "author_ods_code",
+        #     "referral_id",
+        #     "participant_id",
+        #     "sample_id",
+        #     "run_id",
+        #     "name",
+        # ]
+
+        # additional columns (rather verbose)
+        all_cols: list[str] = short_cols + []
+
+        cols = short_cols if summary else all_cols
+
+        def try_getattr(o, name, default=""):
+            try:
+                return getattr(o, name)
+            except CGPClientException:
+                return default
+
+        rows: list[list[str]] = [[try_getattr(r, c, "") for c in cols] for r in referrals]
+
+        if pivot:
+            # print each row as its own table
+            for row in rows:
+                print(
+                    tabulate(
+                        zip(cols, row),
+                        headers=["file property", "value"],
+                        tablefmt=table_format,
+                    ),
+                    end="\n\n",
+                    file=output,
+                )
+        else:
+            print(
+                tabulate(
+                    rows,
+                    headers=cols if include_header else (),
+                    tablefmt=table_format,
+                ),
+                file=output,
+            )
 
 
 class CGPClient:

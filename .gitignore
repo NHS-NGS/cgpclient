@@ -3,3 +3,6 @@ coverage.xml
 report.xml
 .coverage
 *__pycache__*
+*.DS_Store*
+.vscode/
+*.code-workspace
