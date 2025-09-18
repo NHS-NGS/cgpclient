@@ -206,6 +206,7 @@ class CGPFHIRClient:
             )
             if response.ok:
                 bundle = Bundle.parse_obj(response.json())
+                yield bundle
                 if (
                     bundle.link
                     and len(bundle.link) == 1
