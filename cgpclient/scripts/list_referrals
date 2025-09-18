@@ -14,7 +14,7 @@ from cgpclient.fhir import FHIRConfig  # type: ignore
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Fetch details of NGIS referrals associated with the supplied identifiers"
+            "List NGIS referrals associated with the supplied identifiers"
         )
     )
     parser.add_argument(
@@ -136,6 +136,12 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         type=str,
         help="FHIR server workspace ID",
     )
+    parser.add_argument(
+        "-pv",
+        "--pivot",
+        action="store_true",
+        help="Pivot file listing",
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -178,7 +184,14 @@ def main(cmdline_args: list[str]) -> None:
         fhir_config=config,
     )
 
-    referrals: CGPReferrals = client.list_referrals()
+    referrals: CGPReferrals = client.get_referrals()
+
+    referrals.print_table(
+        summary=not args.all,
+        sort_by="last_updated",
+        pivot=args.pivot,
+        include_header=True,
+        output=sys.stdout)
 
 
 if __name__ == "__main__":
