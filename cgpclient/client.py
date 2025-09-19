@@ -411,14 +411,20 @@ class CGPReferral:
         if referral_id is None:
             raise CGPClientException("ServiceRequest with no referral ID")
         return referral_id
-    
+
     @property
     @typing.no_type_check
     def last_updated(self) -> str | None:
         if self._service_request.meta and self._service_request.meta.lastUpdated:
-            return self._service_request.meta.lastUpdated.strftime(
-                "%Y-%m-%dT%H:%M:%S"
-            )
+            return self._service_request.meta.lastUpdated.strftime("%Y-%m-%dT%H:%M:%S")
+        return None
+
+    @property
+    @typing.no_type_check
+    def clinical_indication(self) -> str | None:
+        details = self._service_request.orderDetail
+        if details is not None and len(details) > 0:
+            return details[0].coding[0].code
         return None
 
     @property
@@ -492,6 +498,7 @@ class CGPReferrals:
         short_cols: list[str] = [
             "last_updated",
             "referral_id",
+            "clinical_indication",
             "proband_participant_id",
         ]
 
@@ -506,7 +513,9 @@ class CGPReferrals:
             except CGPClientException:
                 return default
 
-        rows: list[list[str]] = [[try_getattr(r, c, "") for c in cols] for r in referrals]
+        rows: list[list[str]] = [
+            [try_getattr(r, c, "") for c in cols] for r in referrals
+        ]
 
         if pivot:
             # print each row as its own table
