@@ -13,7 +13,9 @@ from cgpclient.utils import setup_logger
 
 def parse_args(args: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description=("List NGIS referrals associated with the supplied identifiers")
+        description=(
+            "List NGIS referrals associated with the supplied identifiers"
+        )  # noqa: E501
     )
     parser.add_argument(
         "-r",
@@ -27,15 +29,14 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         type=str,
         help="NGIS participant ID, e.g p12345678303",
     )
-    parser.add_argument("-s", "--sample_id", type=str, help="Sample identifier")
+    parser.add_argument(
+        "-s", "--sample_id", type=str, help="Sample identifier"
+    )  # noqa: E501
     parser.add_argument(
         "-id",
         "--run_id",
         type=str,
-        help=(
-            "Unique identifier for the sequencing run that generated the FASTQs, "
-            "for a DRAGEN run this should be the run folder name"
-        ),
+        help=("Unique identifier for the sequencing run"),
     )
     parser.add_argument(
         "-t",
@@ -146,13 +147,21 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Pivot file listing",
     )
+    parser.add_argument(
+        "--start-date", help="Start date in ISO format (e.g. 2025-08-01)"
+    )
+    parser.add_argument(
+        "--end-date", help="End date in ISO format \\" "(e.g. 2025-08-31)"
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
     if parsed.config_file and parsed.config_file.is_file():
         # if we're passed a config file use it as default values
         # and then reparse
-        config: dict = yaml.safe_load(parsed.config_file.read_text(encoding="utf-8"))
+        config: dict = yaml.safe_load(
+            parsed.config_file.read_text(encoding="utf-8")
+        )  # noqa: E501
         parser.set_defaults(**config)
         parsed = parser.parse_args(args)
 
@@ -173,6 +182,8 @@ def main(cmdline_args: list[str]) -> None:
         run_id=args.run_id,
         sample_id=args.sample_id,
         workspace_id=args.workspace_id,
+        start_date=args.start_date,
+        end_date=args.end_date,
     )
 
     client: CGPClient = CGPClient(
