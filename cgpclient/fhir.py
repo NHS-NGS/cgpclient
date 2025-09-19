@@ -54,7 +54,7 @@ MAX_SEARCH_RESULTS = 100
 MAX_UNSIGNED_INT = (
     2147483647  # https://hl7.org/fhir/R4/datatypes.html#unsignedInt # noqa: E501
 )
-MAX_PAGES = 1
+MAX_PAGES = 100
 
 
 # Enumerations for various FHIR resource fields
@@ -195,7 +195,6 @@ class CGPFHIRClient:
     def _search_paged(
         self,
         url: str,
-        # query_params: dict[str, str] | None = None,
         query_params: list[tuple] | None = None,
     ) -> Bundle:
         """Peform a search request and page through the results"""
