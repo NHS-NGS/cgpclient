@@ -148,10 +148,10 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         help="Pivot file listing",
     )
     parser.add_argument(
-        "--start-date", help="Start date in ISO format (e.g. 2025-08-01)"
+        "--start_date", help="Start date in ISO format (e.g. 2025-08-01)"
     )
     parser.add_argument(
-        "--end-date", help="End date in ISO format \\" "(e.g. 2025-08-31)"
+        "--end_date", help="End date in ISO format \\" "(e.g. 2025-08-31)"
     )
 
     parsed: argparse.Namespace = parser.parse_args(args)
