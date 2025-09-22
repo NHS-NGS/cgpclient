@@ -429,6 +429,14 @@ class CGPReferral:
 
     @property
     @typing.no_type_check
+    def ods_code(self) -> str | None:
+        performer = self._service_request.performer
+        if performer is not None and len(performer) > 0:
+            return performer[0].identifier.value
+        return None
+
+    @property
+    @typing.no_type_check
     def proband_participant_id(self) -> str:
         if self._service_request.subject and self._service_request.subject.identifier:
             return self._service_request.subject.identifier.value
@@ -498,8 +506,9 @@ class CGPReferrals:
         short_cols: list[str] = [
             "last_updated",
             "referral_id",
-            "clinical_indication",
             "proband_participant_id",
+            "clinical_indication",
+            "ods_code",
         ]
 
         # additional columns (rather verbose)

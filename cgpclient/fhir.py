@@ -219,16 +219,12 @@ class CGPFHIRClient:
                     prefix = url.rsplit("/", 1)[0]
                     suffix = bundle.link[0].url.rsplit("/", 1)[-1]
                     url = f"{prefix}/{suffix}"
-                    query_params = (
-                        []
-                    )  # reset params as these are baked into the URL # noqa: E501
+                    query_params = []  # reset params as these are baked into the URL # noqa: E501
                     pages += 1
                 else:
                     return
             else:
-                raise CGPClientException(
-                    f"Failed to fetch from endpoint: {url}"
-                )  # noqa: E501
+                raise CGPClientException(f"Failed to fetch from endpoint: {url}")
         log.info("Reached maximum number of pages")
 
     def _merge_bundles(self, bundles: list[Bundle]) -> Bundle:
@@ -263,9 +259,7 @@ class CGPFHIRClient:
 
         return self._merge_bundles(bundles)
 
-    def search_for_tasks(
-        self, search_params: FHIRConfig | None = None
-    ) -> list[Task]:  # noqa: E501
+    def search_for_tasks(self, search_params: FHIRConfig | None = None) -> list[Task]:
         query_params: list[tuple] = []
 
         if search_params is not None:
@@ -276,17 +270,15 @@ class CGPFHIRClient:
                 query_params.append(
                     (
                         "subject:identifier",
-                        identifier_search_string(
-                            search_params.participant_identifier
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.participant_identifier),
                     )
                 )
 
             if search_params.ods_code is not None:
                 query_params.append(
                     (
-                        "author:identifier",
-                        identifier_search_string(search_params.org_identifier),
+                        "performer:identifier",
+                        identifier_search_string(search_params.ods_code),
                     )
                 )
 
@@ -299,17 +291,13 @@ class CGPFHIRClient:
 
         if search_params is not None:
             if search_params.document_reference_id is not None:
-                query_params.append(
-                    ("_id", search_params.document_reference_id)
-                )  # noqa: E501
+                query_params.append(("_id", search_params.document_reference_id))
 
             if search_params.file_id is not None:
                 query_params.append(
                     (
                         "identifier",
-                        identifier_search_string(
-                            search_params.file_identifier()
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.file_identifier()),
                     )
                 )
 
@@ -317,9 +305,7 @@ class CGPFHIRClient:
                 query_params.append(
                     (
                         "subject:identifier",
-                        identifier_search_string(
-                            search_params.nhs_number_identifier
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.nhs_number_identifier),
                     )
                 )
 
@@ -332,9 +318,7 @@ class CGPFHIRClient:
                 query_params.append(
                     (
                         "subject:identifier",
-                        identifier_search_string(
-                            search_params.participant_identifier
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.participant_identifier),
                     )
                 )
 
@@ -369,7 +353,7 @@ class CGPFHIRClient:
     def search_for_service_requests(
         self, search_params: FHIRConfig | None = None
     ) -> list[ServiceRequest]:
-        """Search for ServiceRequests using the parameters in the FHIR config"""  # noqa: E501
+        """Search for ServiceRequests using the parameters in the FHIR config"""
         query_params: list[tuple] = []
 
         if search_params is not None:
@@ -377,9 +361,7 @@ class CGPFHIRClient:
                 query_params.append(
                     (
                         "identifier",
-                        identifier_search_string(
-                            search_params.referral_identifier
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.referral_identifier),
                     )
                 )
 
@@ -387,25 +369,28 @@ class CGPFHIRClient:
                 query_params.append(
                     (
                         "subject:identifier",
-                        identifier_search_string(
-                            search_params.participant_identifier
-                        ),  # noqa: E501
+                        identifier_search_string(search_params.participant_identifier),
+                    )
+                )
+
+            if search_params.ods_code is not None:
+                print(search_params.org_identifier)
+                query_params.append(
+                    (
+                        "performer:identifier",
+                        identifier_search_string(search_params.org_identifier),
                     )
                 )
 
             # only start date provided - user wants to filter for all referrals
             # updated after the provided start date
             if search_params.start_date is not None:
-                query_params.append(
-                    ("_lastUpdated", f"gt{search_params.start_date}")
-                )  # noqa: E501
+                query_params.append(("_lastUpdated", f"ge{search_params.start_date}"))
 
             # only end date provided - user wants to filter for all referrals
             # updated before the provided end date
             if search_params.end_date is not None:
-                query_params.append(
-                    ("_lastUpdated", f"lt{search_params.end_date}")
-                )  # noqa: E501
+                query_params.append(("_lastUpdated", f"le{search_params.end_date}"))
 
         bundle: Bundle = self.search_for_fhir_resource(
             resource_type=ServiceRequest.__name__,
@@ -461,9 +446,7 @@ class CGPFHIRClient:
                     )
                 ),
             ],
-            context=DocumentReferenceContext(
-                related=self.config.related_references
-            ),  # noqa: E501
+            context=DocumentReferenceContext(related=self.config.related_references),
             extension=[
                 # we use an extension to encode the real file size
                 Extension(
@@ -478,13 +461,9 @@ class CGPFHIRClient:
     ) -> list[DocumentReference]:
         """Upload the files using the DRS upload protocol and return a
         DocumentReference"""
-        drs_client = CGPDrsClient(
-            self.api_base_url, self.headers, self.dry_run
-        )  # noqa: E501
+        drs_client = CGPDrsClient(self.api_base_url, self.headers, self.dry_run)
         uploader = DrsUploader(drs_client)
-        drs_objects: list[DrsObject] = uploader.upload_files(
-            filenames, self.output_dir
-        )  # noqa: E501
+        drs_objects: list[DrsObject] = uploader.upload_files(filenames, self.output_dir)
 
         return [
             self.document_reference_for_drs_object(
@@ -500,10 +479,10 @@ class CGPFHIRClient:
         """Upload the files using the DRS upload protocol and post
         DocumentReferences to the FHIR server"""
 
-        document_references: list[
-            DocumentReference
-        ] = self.create_drs_document_references(
-            filenames=filenames,
+        document_references: list[DocumentReference] = (
+            self.create_drs_document_references(
+                filenames=filenames,
+            )
         )
 
         self.post_fhir_resource(resource=bundle_for(document_references))
@@ -533,7 +512,7 @@ class CGPFHIRClient:
         params: dict[str, str] | None = None,
     ) -> None:
         """Post a FHIR resource to the FHIR server"""
-        url: str = f"{fhir_base_url(self.api_base_url)}/{resource.resource_type}/"  # noqa: E501
+        url: str = f"{fhir_base_url(self.api_base_url)}/{resource.resource_type}/"
 
         if resource.resource_type == Bundle.__name__ and resource.type in (
             BundleType.BATCH,
@@ -547,9 +526,7 @@ class CGPFHIRClient:
                     bundle=resource, org_reference=self.config.org_reference
                 )
             self.add_workspace_meta_tag_to_bundle(bundle=resource)
-            log.info(
-                "Posting bundle including %i entries", len(resource.entry)
-            )  # noqa: E501
+            log.info("Posting bundle including %i entries", len(resource.entry))
 
         self.add_workspace_meta_tag(resource=resource)
 
@@ -619,12 +596,10 @@ def identifier_search_string(identifier: Identifier) -> str:
     return f"{identifier.system}|{identifier.value}"
 
 
-def provenance_for(
-    resource: DomainResource, org_reference: Reference
-) -> Provenance:  # noqa: E501
+def provenance_for(resource: DomainResource, org_reference: Reference) -> Provenance:
     """Create a Provenance resource for the given FHIR resource"""
     log.info(
-        "Creating Provenance resource for Organization %s for FHIR resource %s",  # noqa: E501
+        "Creating Provenance resource for Organization %s for FHIR resource %s",
         org_reference.identifier.value,
         f"{resource.resource_type}/{resource.id}",
     )
@@ -648,7 +623,7 @@ def fhir_base_url(api_base_url: str) -> str:
 
 def bundle_entry_for(
     resource: DomainResource,
-    method: BundleRequestMethod = BundleRequestMethod.POST,  # noqa: E501
+    method: BundleRequestMethod = BundleRequestMethod.POST,
 ) -> BundleEntry:
     """Create a BundleEntry for the resource, using the specified method"""
     return BundleEntry(
@@ -660,7 +635,7 @@ def bundle_entry_for(
 
 def bundle_for(
     resources: list[DomainResource],
-    bundle_type: BundleType = BundleType.TRANSACTION,  # noqa: E501
+    bundle_type: BundleType = BundleType.TRANSACTION,
 ) -> Bundle:
     """Create a FHIR Bundle including the list of resources"""
     return Bundle(
@@ -669,9 +644,7 @@ def bundle_for(
     )
 
 
-def add_provenance_for_bundle(
-    bundle: Bundle, org_reference: Reference
-) -> Bundle:  # noqa: E501
+def add_provenance_for_bundle(bundle: Bundle, org_reference: Reference) -> Bundle:
     """Add Provenance resources for each of the resources in the Bundle"""
 
     # add the Device resource
@@ -679,9 +652,7 @@ def add_provenance_for_bundle(
 
     provenance_resources: list[BundleEntry] = [
         bundle_entry_for(
-            resource=provenance_for(
-                entry.resource, org_reference=org_reference
-            )  # noqa: E501
+            resource=provenance_for(entry.resource, org_reference=org_reference)
         )
         for entry in bundle.entry
     ]
@@ -715,9 +686,7 @@ def create_composition(
         author=[fhir_config.org_reference],
         title="WGS sample run",
         section=[
-            CompositionSection(
-                title="sample", entry=[reference_for(specimen)]
-            ),  # noqa: E501
+            CompositionSection(title="sample", entry=[reference_for(specimen)]),
             CompositionSection(title="run", entry=[reference_for(procedure)]),
             CompositionSection(
                 title="files",
@@ -761,11 +730,8 @@ class FHIRConfig:
         self.start_date = start_date
         self.end_date = end_date
 
-        if (
-            document_reference_id is not None
-            and document_reference_id.startswith(  # noqa: E501
-                DocumentReference.__name__
-            )
+        if document_reference_id is not None and document_reference_id.startswith(
+            DocumentReference.__name__
         ):
             # allow IDs of the form DocumentReference/UUID
             self.document_reference_id = document_reference_id.split("/")[-1]
@@ -914,7 +880,7 @@ class FHIRConfig:
         return CodeableConcept(
             coding=[
                 Coding(
-                    system="https://fhir.nhs.uk/CodeSystem/England-GenomicTestDirectory",  # noqa: E501
+                    system="https://fhir.nhs.uk/CodeSystem/England-GenomicTestDirectory",
                     code=self.clinical_indication_code,
                 )
             ],
@@ -935,7 +901,7 @@ class FHIRConfig:
         if self.run_id is None:
             raise CGPClientException("No run ID supplied")
         return Identifier(
-            system=f"https://{self.org_identifier.value}.nhs.uk/sequencing-run-id",  # noqa: E501
+            system=f"https://{self.org_identifier.value}.nhs.uk/sequencing-run-id",
             value=self.run_id,
         )
 
