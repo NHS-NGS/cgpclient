@@ -69,7 +69,7 @@ ignore = [
     "E501", # prevent line-length violations
 ]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = [
     "F401", # prevent cleaning up unused imports
     "F403", # allow undefined local import wildcard
