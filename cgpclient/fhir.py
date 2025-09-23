@@ -374,7 +374,6 @@ class CGPFHIRClient:
                 )
 
             if search_params.ods_code is not None:
-                print(search_params.org_identifier)
                 query_params.append(
                     (
                         "performer:identifier",
