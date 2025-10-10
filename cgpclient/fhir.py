@@ -282,6 +282,15 @@ class CGPFHIRClient:
                     )
                 )
 
+        bundle: Bundle = self.search_for_fhir_resource(
+            resource_type=Task.__name__,
+            query_params=query_params,
+        )
+
+        if bundle.entry:
+            return [entry.resource for entry in bundle.entry]
+        return []
+
     def search_for_document_references(
         self, search_params: FHIRConfig | None = None
     ) -> list[DocumentReference]:
