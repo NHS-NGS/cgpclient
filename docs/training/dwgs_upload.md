@@ -27,7 +27,7 @@ bash docs/training/generate_mock_run.sh
 
 !!! gel-magnify "What This Creates"
     The script generates a complete run folder structure including:
-    
+
     - **Run folder**: Named with a unique run ID (e.g., `250702_A00123_0001_CE956995D6`)
     - **fastq_list.csv**: Metadata file listing all FASTQ files
     - **RunInfo.xml**: Basic run setup metadata
@@ -114,6 +114,11 @@ cgpclient/scripts/upload_dragen_run \
   -r r9012 \
   -cfg config.yaml
 ```
+
+???+ info "Sample IDs"
+
+    Note here we are not specifying a -s (--sample_id) so the first sample in the `fastq_list.csv`
+    is selected.
 
 !!! gel-magnify "Expected Success Message"
     If successful, you should see: **"Successfully posted FHIR resource"**
