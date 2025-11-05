@@ -12,7 +12,7 @@ We have included an example script in the [scripts](https://github.com/NHS-NGS/c
 
     This is an example script and may need to be modified by Sequencing Centres to make it compatible with the data being uploaded.
 
-    Genomics England will verify, as much as possible, that uploaded files and associated resources are compatible with NGIS, but Sequencing Centres are 
+    Genomics England will verify, as much as possible, that uploaded files and associated resources are compatible with NGIS, but Sequencing Centres are
     responsible for ensuring input files and parameters supplied are correct.
 
     If you have any questions please contact Genomics England Service Desk [here](https://jiraservicedesk.extge.co.uk/plugins/servlet/desk/category/nhsglh)
@@ -24,7 +24,7 @@ Uploading FASTQ Files after demultiplexing with DRAGEN using the `upload_dragen_
 ### 1. Configure CGP Client
 
 You will first need to configure your cgpclient. The following is the basic config required:
- 
+
 ``` yaml
 ods_code: XXXXXXX # your ODS code, this will be used to associate all resources with your organisation
 verbose: true # print verbose output to the console, for even more detail you can use --debug or debug: true
@@ -58,13 +58,28 @@ GACTGAGTAG.CACTATCAAC.1,my_sample_id,UnknownLibrary,1,my_sample_id_S1_L001_R1_00
 
 ```
 
+Where `my_sample_id` is the fluid-x tube number, this is called the `dispatched_sample_lsid` in the `GEL1001` csv file
+
+!!! warning
+
+    Though not explicitly needed by the cgp client i.e. it won't be verifying the RGSM value supplied, it is anticipated
+    that the id supplied as `--sample_id {someid}` is the RGSM value in the `fastq_list.csv` and this should be the
+    "NGIS Lab Sample ID" aka the fluid-x tube number.
+
+    It is the responsibility of the Sequencing Centre performing the data upload to ensure the RGSM value in the
+    `fastq_list.csv` corresponds to the correct referral, participant and fastq files.
+
 ### 3. Upload FASTQ Files
 
 ???+ info
 
-    You will need the NGIS referral and participant IDs to run the script to associate the files with the correct referral.
+    As well as the fluid-x tube number for the sample you will need the NGIS referral and participant IDs to run the
+    script to associate the files with the correct referral.
 
-    It is anticipated the Sequencing Centres will have been sent these when the DNA was sent to them by the GLH ordering the test (this may be the same GLH as the Sequencing Centre)
+    It is anticipated the Sequencing Centres will have been sent these when the DNA was sent to them by the GLH ordering the test
+    (this may be the same GLH as the Sequencing Centre)
+
+    It is the responsibility of the Sequencing Centre to ensure IDs are consistent.
 
 Use the `upload_dragen_run` script with the following command:
 
@@ -74,16 +89,15 @@ cgpclient/scripts/upload_dragen_run \
   --run_id {DRAGEN run ID}
   --run_info_file {path to DRAGEN RunInfo.xml file} (optional)
   --sample_id {someid} \
-  --fastq_list {path to fastq list csv file from Dragen} \ 
+  --fastq_list {path to fastq list csv file from Dragen} \
   --participant_id {NGIS participant ID} \
   --referral_id {NGIS referral ID} \
   --config_file {path to cgpclient config file} (if you keep your config in ~/.cgpclient/config.yaml this file will be read by default and you don't need to specify it here)
 
 ```
 
-  
 
-- Replace `{someid}` with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload. If not supplied this script will use the first RGSM value found
+- Replace `{someid}` with the value of `RGSM` from the `fastq_list.csv` file for the sample you want to upload. If not supplied this script will use the first RGSM value found. For dWGS the value should be the fluid-x tube number aka `dispatched_sample_lsid` (from old GEL1001)
 - Repeat this command for each unique sample (as listed in the RGSM column) that has files to be uploaded.
 
 - For a DRAGEN run the {DRAGEN run ID} should be the run folder name, e.g. `240627_M03456_0001_AHCYL3XY`. You can also optionally attach the DRAGEN `RunInfo.xml` file to the upload using the `--run_info_file` argument, in which case the file will be uploaded to the CGP and associated with the sample and run like the FASTQs.
@@ -92,7 +106,7 @@ cgpclient/scripts/upload_dragen_run \
 
     The script will go through each row in the `fastq_list.csv` file and upload only the files for the `<someid\>` and ignore all the others.
 
-    
+
 ### 4. Upload Process and Resource Creation
 
 Once executed:
@@ -105,11 +119,11 @@ Once executed:
 
     At the time of writing there is a single ora reference for humans associated with DRAGEN >= v4 which we will use by default for handling ora compressed files.
 
-    See the [DRAGEN documentation](https://support.illumina.com/sequencing/sequencing_software/dragen-bio-it-platform/product_files.html) for more information 
+    See the [DRAGEN documentation](https://support.illumina.com/sequencing/sequencing_software/dragen-bio-it-platform/product_files.html) for more information
 
 ### 5. Upload Results
 
-- Large files may take time to upload, log messages will be shown on the terminal. 
+- Large files may take time to upload, log messages will be shown on the terminal.
 - Successful uploads will return confirmation messages.
 - Errors will be reported with relevant details.
 
@@ -120,7 +134,7 @@ After upload:
 - FASTQ files will be linked to the corresponding NGIS participant and referral.
 - The NGIS pipeline will proceed once all required data has been verified.
 
-### 7. Check uploaded files 
+### 7. Check uploaded files
 
 ``` bash
 
@@ -132,6 +146,10 @@ After upload:
 ```
 
 ## Troubleshooting
+
+## How do I format my `fastq_list.csv` file
+
+TBC
 
 ### How do I check if a file already exists for my referral / patient?
 
