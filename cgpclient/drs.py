@@ -218,14 +218,18 @@ class CGPDrsClient:
         headers: dict,
         dry_run: bool = False,
         override_api_base_url: bool = False,
+        base_url_override: str | None = None,
     ):
         self.api_base_url = api_base_url
         self.headers = headers
         self.dry_run = dry_run
         self.override_api_base_url = override_api_base_url
+        self.base_url_override = base_url_override
 
     @property
     def base_url(self) -> str:
+        if self.base_url_override is not None and self.base_url_override.strip():
+            return self.base_url_override.rstrip("/")
         return drs_base_url(self.api_base_url)
 
     def get_drs_object(
@@ -297,8 +301,12 @@ class CGPDrsClient:
 
         if drs_url.startswith("https:"):
             if self.override_api_base_url:
+                # Preserve the path *after* /ga4gh/ but force the configured base.
+                # This supports deployments where the API is mounted under a prefix
+                # and/or where the DRS base URL is explicitly configured.
                 _, path = drs_url.split("/ga4gh/")
-                drs_url = f"https://{self.api_base_url}/ga4gh/{path}"
+                base_prefix = self.base_url.split("/ga4gh/")[0]
+                drs_url = f"{base_prefix}/ga4gh/{path}"
             return drs_url
 
         raise CGPClientException(f"Invalid DRS URL format {drs_url}")

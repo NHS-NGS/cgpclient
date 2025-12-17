@@ -244,7 +244,7 @@ class DrsUploader:
         log.debug(upload_request.model_dump_json(exclude_defaults=True))
 
         response = requests.post(
-            url=f"https://{self.drs_client.api_base_url}/upload-request",
+            url=f"https://{self.drs_client.base_url}/upload-request",
             headers=self.drs_client.headers,
             timeout=REQUEST_TIMEOUT_SECS,
             json=upload_request.model_dump(),
