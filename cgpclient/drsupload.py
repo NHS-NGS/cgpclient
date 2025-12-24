@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import mimetypes
 from pathlib import Path
+from typing import Mapping, Any
 
 try:
     from enum import StrEnum  # type: ignore
@@ -42,6 +43,84 @@ mimetypes.add_type("application/index", ext=".bai")
 class DrsUploadMethodType(StrEnum):  # type: ignore
     S3 = "s3"
     HTTPS = "https"
+
+
+def _normalise_credential_key(key: str) -> str:
+    """
+    Normalise credential keys to be comparison-friendly:
+    - lower-case
+    - remove non-alphanumeric characters (underscores, hyphens, spaces, etc.)
+    """
+    return "".join(ch for ch in key.lower() if ch.isalnum())
+
+
+def coerce_aws_credentials(credentials: Mapping[str, Any]) -> dict[str, str]:
+    """
+    Coerce AWS credentials keys from various common spellings/cases into canonical AWS keys:
+    - AccessKeyId
+    - SecretAccessKey
+    - SessionToken (optional)
+
+    Accepts variants like:
+      access_key_id, aws_access_key_id, AWSAccessKeyId, AccessKeyID, session-token, etc.
+    """
+    if not isinstance(credentials, Mapping):
+        raise CGPClientException("Invalid AWS credentials format (expected an object/map)")
+
+    # Build a normalised lookup from the provided keys
+    normalised_to_value: dict[str, Any] = {
+        _normalise_credential_key(str(k)): v for k, v in credentials.items()
+    }
+
+    aliases: dict[str, list[str]] = {
+        "AccessKeyId": [
+            "accesskeyid",
+            "awsaccesskeyid",
+            "aws_access_key_id",
+            "access_key_id",
+        ],
+        "SecretAccessKey": [
+            "secretaccesskey",
+            "awssecretaccesskey",
+            "aws_secret_access_key",
+            "secret_access_key",
+        ],
+        "SessionToken": [
+            "sessiontoken",
+            "awssessiontoken",
+            "aws_session_token",
+            "session_token",
+        ],
+    }
+
+    coerced: dict[str, str] = {}
+    missing_required: list[str] = []
+
+    for canonical_key, key_aliases in aliases.items():
+        found = None
+        for alias in key_aliases:
+            normalised_alias = _normalise_credential_key(alias)
+            if normalised_alias in normalised_to_value:
+                found = normalised_to_value[normalised_alias]
+                break
+
+        if found is None:
+            if canonical_key in ("AccessKeyId", "SecretAccessKey"):
+                missing_required.append(canonical_key)
+            continue
+
+        if not isinstance(found, str):
+            raise CGPClientException(
+                f"Invalid AWS credential value type for {canonical_key} (expected string)"
+            )
+        coerced[canonical_key] = found
+
+    if missing_required:
+        raise CGPClientException(
+            f"Missing necessary AWS credentials: {', '.join(missing_required)}"
+        )
+
+    return coerced
 
 
 class DrsUploadMethod(BaseModel):
@@ -189,18 +268,13 @@ class S3Client:
             return
 
         try:
-            # s3 = boto3.client(
-            #     "s3",
-            #     aws_access_key_id=upload_method.credentials["AccessKeyId"],
-            #     aws_secret_access_key=upload_method.credentials["SecretAccessKey"],
-            #     aws_session_token=upload_method.credentials["SessionToken"],
-            #     region_name=upload_method.region,
-            # )
+            creds = coerce_aws_credentials(upload_method.credentials)
+
             s3 = boto3.client(
                 "s3",
-                aws_access_key_id=upload_method.credentials["AccessKeyId"],
-                aws_secret_access_key=upload_method.credentials["SecretAccessKey"],
-                aws_session_token=upload_method.credentials["SessionToken"],
+                aws_access_key_id=creds["AccessKeyId"],
+                aws_secret_access_key=creds["SecretAccessKey"],
+                aws_session_token=creds.get("SessionToken"),
                 region_name=upload_method.region,
             )
         except KeyError as e:

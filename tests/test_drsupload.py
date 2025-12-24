@@ -20,6 +20,7 @@ from cgpclient.drsupload import (
     DrsUploadRequest,
     DrsUploadResponse,
     S3Client,
+    coerce_aws_credentials,
 )
 from cgpclient.utils import CGPClientException, create_uuid
 
@@ -217,3 +218,27 @@ def test_drs_upload_file(
     assert drs_object.size == len(file_data)
     assert len(drs_object.access_methods) == 1
     assert drs_object.access_methods[0].access_id == "s3"
+
+
+def test_coerce_aws_credentials_accepts_correct_and_snake_case_keys() -> None:
+    # Already-correct AWS-style keys should remain usable and canonical.
+    creds_camel = {
+        "AccessKeyId": "key",
+        "SecretAccessKey": "secret",
+        "SessionToken": "token",
+    }
+    coerced = coerce_aws_credentials(creds_camel)
+    assert coerced == creds_camel
+
+    # Common snake_case prefixed keys should be coerced to canonical keys.
+    creds_snake = {
+        "access_key_id": "key2",
+        "secret_access_key": "secret2",
+        "session_token": "token2",
+    }
+    coerced2 = coerce_aws_credentials(creds_snake)
+    assert coerced2 == {
+        "AccessKeyId": "key2",
+        "SecretAccessKey": "secret2",
+        "SessionToken": "token2",
+    }
