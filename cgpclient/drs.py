@@ -4,6 +4,8 @@ import logging
 import sys
 from pathlib import Path
 from typing import List
+from uuid import uuid4
+from datetime import datetime, timezone
 
 try:
     from enum import StrEnum  # type: ignore
@@ -204,6 +206,15 @@ class DrsObject(BaseModel):
             log.info("File hash successfully verified")
 
 
+class DrsCandidateObject(BaseModel):
+    name: str | None = None
+    size: int
+    mime_type: str | None = None
+    checksums: list[Checksum] = Field(min_length=1)
+    access_methods: list[AccessMethod] = Field(min_length=1)
+    description: str | None = None
+
+
 class Error(BaseModel):
     msg: str
     status_code: int
@@ -256,13 +267,42 @@ class CGPDrsClient:
         log.debug(drs_object)
         return drs_object
 
-    def post_drs_object(
-        self, drs_object: DrsObject, output_dir: Path | None = None
-    ) -> None:
+    def post_drs_candidate_object(
+        self, candidate_object: DrsCandidateObject, output_dir: Path | None = None
+    ) -> DrsObject:
         """Post a DRS object to the DRS server"""
-        endpoint = f"{self.base_url}/objects"
-        log.info("Posting DRS object: %s", drs_object.id)
-        log.debug(drs_object.model_dump_json(exclude_defaults=True))
+        endpoint = f"{self.base_url}/register-objects"
+        log.info("Posting DRS object: %s", candidate_object.name)
+        log.debug(candidate_object.model_dump_json(exclude_defaults=True))
+
+        drs_object = None
+
+        if self.dry_run:
+            log.info("Dry run, so skipping posting DRS object")
+            drs_object = fake_drs_object_from(candidate_object=candidate_object)
+
+        else:
+            drs_request_body = {
+                "candidates": [
+                    candidate_object.model_dump(exclude_defaults=True, exclude_none=True)
+                ]
+            }
+            response = requests.post(
+                url=endpoint,
+                headers=self.headers,
+                timeout=REQUEST_TIMEOUT_SECS,
+                json=drs_request_body,
+            )
+
+            if response.ok:
+                drs_object = DrsObject.model_validate(response.json()["objects"][0])
+                log.info("Successfully posted DRS objects")
+
+            else:
+                raise CGPClientException(
+                    f"Error posting DRS object, status code: "
+                    f"{response.status_code} response: {response.text}"
+                )
 
         if output_dir is not None:
             output_file = output_dir / Path("drs_objects.json")
@@ -270,23 +310,7 @@ class CGPDrsClient:
             with open(output_file, "a", encoding="utf-8") as out:
                 print(drs_object.model_dump_json(), file=out)
 
-        if self.dry_run:
-            log.info("Dry run, so skipping posting DRS object")
-            return
-
-        response = requests.post(
-            url=endpoint,
-            headers=self.headers,
-            timeout=REQUEST_TIMEOUT_SECS,
-            json=drs_object.model_dump(),
-        )
-        if response.ok:
-            log.info("Successfully posted DRS objects")
-        else:
-            raise CGPClientException(
-                f"Error posting DRS object, status code: "
-                f"{response.status_code} response: {response.text}"
-            )
+        return drs_object
 
     def _https_url_from_id(self, object_id: str) -> str:
         """Construct an HTTPS DRS URL from a DRS object ID"""
@@ -372,3 +396,33 @@ def map_https_to_drs_url(https_url: str) -> str:
     except ValueError as e:
         log.error("Error parsing HTTPS DRS URL: %s", https_url)
         raise CGPClientException(f"Unable to parse HTTPS DRS URL: {https_url}") from e
+
+
+def fake_drs_object_from(candidate_object: "DrsCandidateObject") -> "DrsObject":
+    """
+    Create a synthetic DrsObject from a DrsCandidateObject (used for dry-run flows).
+
+    This keeps the user-provided metadata (name/size/mime_type/checksums/access_methods/description)
+    and fills required server-side fields with reasonable placeholders.
+    """
+    object_id = f"dryrun-{uuid4().hex}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Self URI is required by the DRS object model; use a clearly fake but valid-looking URI.
+    self_uri = f"drs://dry-run/{object_id}"
+
+    return DrsObject(
+        id=object_id,
+        name=candidate_object.name,
+        self_uri=self_uri,
+        size=candidate_object.size,
+        created_time=now_iso,
+        updated_time=now_iso,
+        version=None,
+        mime_type=candidate_object.mime_type,
+        checksums=candidate_object.checksums,
+        access_methods=candidate_object.access_methods,
+        contents=[],
+        description=candidate_object.description,
+        aliases=[],
+    )
