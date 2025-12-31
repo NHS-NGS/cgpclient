@@ -362,7 +362,7 @@ class CGPDrsClient:
 
 def drs_base_url(api_base_url: str) -> str:
     """Return the base HTTPS URL for the DRS server"""
-    return f"https://{api_base_url}/ga4gh/drs/v1.4"
+    return f"https://{api_base_url}/ga4gh/drs/v1"
 
 
 def map_drs_to_https_url(drs_url: str) -> str:
