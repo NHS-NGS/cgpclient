@@ -387,14 +387,44 @@ def map_drs_to_https_url(drs_url: str) -> str:
 
 
 def map_https_to_drs_url(https_url: str) -> str:
-    """Map an HTTPS URL to a DRS URL"""
+    """Map an HTTPS URL to a DRS URL.
+
+    We assume:
+      - the host is always the 3rd element after splitting on "/"
+      - the object_id is always the final path element
+      - anything between host and the "ga4gh" segment is the optional api_path
+
+    Examples:
+      https://host/genomic-data-access/ga4gh/.../1234 -> drs://host/genomic-data-access/1234
+      https://host/ga4gh/.../1234                     -> drs://host/1234
+    """
     if not https_url.startswith("https://"):
         raise CGPClientException(f"Invalid HTTPS URL: {https_url}")
+
     try:
-        # e.g.    https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234 # noqa: E501
-        # maps to:  drs://api.service.nhs.uk/genomic-data-access/1234
-        (_, _, base_url, api_name, _, _, _, _, object_id) = https_url.split("/")
-        drs_url: str = f"drs://{base_url}/{api_name}/{object_id}"
+        parts = https_url.split("/")
+
+        if len(parts) < 4:
+            raise ValueError()
+
+        host = parts[2]
+        object_id = parts[-1]
+
+        if not host or not object_id:
+            raise ValueError()
+
+        if "ga4gh" not in parts[3:]:
+            raise ValueError()
+
+        ga4gh_index = parts.index("ga4gh")
+        api_path_parts = parts[3:ga4gh_index]
+        api_path = "/".join(p for p in api_path_parts if p)
+
+        if api_path:
+            drs_url: str = f"drs://{host}/{api_path}/{object_id}"
+        else:
+            drs_url = f"drs://{host}/{object_id}"
+
         log.debug("Mapped HTTPS URL: %s to DRS URL: %s", https_url, drs_url)
         return drs_url
     except ValueError as e:

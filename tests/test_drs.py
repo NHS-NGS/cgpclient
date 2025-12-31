@@ -10,6 +10,7 @@ from cgpclient.drs import (
     CGPDrsClient,
     DrsObject,
     map_drs_to_https_url,
+    map_https_to_drs_url,
 )
 from cgpclient.utils import CGPClientException
 
@@ -147,10 +148,21 @@ def test_map_drs_to_https_url_raises_when_urls_are_bad(drs_url: str) -> None:
         map_drs_to_https_url(drs_url)
 
 
-    with pytest.raises(CGPClientException):
-        map_drs_to_https_url(
-            f"drs://api.service.nhs.uk/ga4gh/drs/v1.4/objects/{object_id}"
-        )
 
-    with pytest.raises(CGPClientException):
-        map_drs_to_https_url(f"drs://{object_id}")
+@pytest.mark.parametrize(
+    ("https_url", "expected_drs_url"),
+    [
+        pytest.param(
+            "https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234",
+            "drs://api.service.nhs.uk/genomic-data-access/1234",
+            id="with api name in path",
+        ),
+        pytest.param(
+            "https://api.service.nhs.uk/ga4gh/drs/v1.4/objects/1234",
+            "drs://api.service.nhs.uk/1234",
+            id="without api name in path",
+        ),
+    ],
+)
+def test_map_https_to_drs_url(https_url: str, expected_drs_url: str) -> None:
+    assert map_https_to_drs_url(https_url) == expected_drs_url
