@@ -372,8 +372,12 @@ def map_drs_to_https_url(drs_url: str) -> str:
     try:
         # e.g.       drs://api.service.nhs.uk/genomic-data-access/1234
         # maps to: https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234 # noqa: E501
-        (_, _, base_url, api_name, object_id) = drs_url.split("/")
-        api_base_url: str = f"{base_url}/{api_name}"
+        parts = drs_url.split("/")
+        if len(parts) not in (4,5):
+            raise ValueError()
+        object_id = parts[-1]
+        api_base_url = "/".join(parts[2:-1])
+
         https_url: str = f"{drs_base_url(api_base_url)}/objects/{object_id}"
         log.debug("Mapped DRS URL: %s to HTTPS URL: %s", drs_url, https_url)
         return https_url
