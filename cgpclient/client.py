@@ -242,6 +242,7 @@ class CGPFiles:
             client.headers,
             client.dry_run,
             client.override_api_base_url,
+            client.drs_base_url,
         )
         self._files = [
             CGPFile(document_reference=doc_ref, drs_client=drs_client, client=client)
@@ -565,6 +566,8 @@ class CGPClient:
         dry_run: bool = False,
         output_dir: Path | None = None,
         fhir_config: FHIRConfig | None = None,
+        fhir_base_url: str | None = None,
+        drs_base_url: str | None = None,
     ):
         self.api_host = api_host
         self.api_name = api_name
@@ -572,6 +575,8 @@ class CGPClient:
         self.dry_run = dry_run
         self.output_dir = output_dir
         self.fhir_config = FHIRConfig() if fhir_config is None else fhir_config
+        self.fhir_base_url = fhir_base_url
+        self.drs_base_url = drs_base_url
 
         # Use provided auth provider or create one from legacy parameters
         self.auth_provider = auth_provider or create_auth_provider(
@@ -593,6 +598,8 @@ class CGPClient:
             config=self.fhir_config,
             dry_run=self.dry_run,
             output_dir=self.output_dir,
+            base_url_override=self.fhir_base_url,
+            drs_base_url_override=self.drs_base_url,
         )
 
     # API

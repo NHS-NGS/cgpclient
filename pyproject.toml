@@ -1,6 +1,6 @@
 [project]
 name = "cgpclient"
-version = "0.1.0"
+version = "0.2.0"
 description = "Python Client for the Clinical Genomics Platform"
 authors = [
     {name = "Graham Ritchie",email = "gritchie@gmail.com"}

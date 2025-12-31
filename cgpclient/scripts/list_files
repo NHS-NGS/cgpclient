@@ -172,6 +172,22 @@ def parse_args(args: list[str]) -> argparse.Namespace:
         action="store_true",
         help="Pivot file listing",
     )
+    parser.add_argument(
+        "--fhir_base_url",
+        type=str,
+        help=(
+            "Explicit FHIR service base URL (overrides computed default). "
+            "Example: https://example.org/fhir/r4"
+        ),
+    )
+    parser.add_argument(
+        "--drs_base_url",
+        type=str,
+        help=(
+            "Explicit DRS service base URL (overrides computed default). "
+            "Example: https://example.org/ga4gh/drs/v1"
+        ),
+    )
 
     parsed: argparse.Namespace = parser.parse_args(args)
 
@@ -209,6 +225,8 @@ def main(cmdline_args: list[str]) -> None:
         apim_kid=args.apim_kid,
         override_api_base_url=args.override_api_base_url,
         fhir_config=config,
+        fhir_base_url=args.fhir_base_url,
+        drs_base_url=args.drs_base_url,
     )
 
     files: CGPFiles = client.get_files()

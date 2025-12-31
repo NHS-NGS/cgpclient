@@ -10,6 +10,7 @@ from cgpclient.drs import (
     CGPDrsClient,
     DrsObject,
     map_drs_to_https_url,
+    map_https_to_drs_url,
 )
 from cgpclient.utils import CGPClientException
 
@@ -112,24 +113,56 @@ def test_get_object(mock_get_object: MagicMock, drs_object: dict, client: CGPCli
     mock_get_object.assert_called()
 
 
-def test_map_drs_to_https_url() -> None:
-    object_id: str = "1234"
-    drs_url: str = f"drs://api.service.nhs.uk/genomic-data-access/{object_id}"
-    https_url: str = f"https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/{object_id}"
-    assert map_drs_to_https_url(drs_url) == https_url
+@pytest.mark.parametrize(
+    ("drs_url", "expected_https_url"),
+    [
+        (
+            "drs://api.service.nhs.uk/genomic-data-access/1234",
+            "https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1/objects/1234",
+        ),
+        (
+            "drs://api.service.nhs.uk/1234",
+            "https://api.service.nhs.uk/ga4gh/drs/v1/objects/1234",
+        ),
+    ],
+)
+def test_map_drs_to_https_url(drs_url: str, expected_https_url: str) -> None:
+    assert map_drs_to_https_url(drs_url) == expected_https_url
 
-    with pytest.raises(CGPClientException):
-        map_drs_to_https_url(
-            f"drs://api.service.nhs.uk/unexpected/genomic-data-access/{object_id}"
-        )
 
+@pytest.mark.parametrize(
+    "drs_url",
+    [
+        pytest.param(
+            "drs://api.service.nhs.uk/unexpected/genomic-data-access/1234",
+            id="too many path segments",
+        ),
+        pytest.param(
+            "drs://1234",
+            id="missing host",
+        ),
+    ],
+)
+def test_map_drs_to_https_url_raises_when_urls_are_bad(drs_url: str) -> None:
     with pytest.raises(CGPClientException):
-        map_drs_to_https_url(f"drs://api.service.nhs.uk/{object_id}")
+        map_drs_to_https_url(drs_url)
 
-    with pytest.raises(CGPClientException):
-        map_drs_to_https_url(
-            f"drs://api.service.nhs.uk/ga4gh/drs/v1.4/objects/{object_id}"
-        )
 
-    with pytest.raises(CGPClientException):
-        map_drs_to_https_url(f"drs://{object_id}")
+
+@pytest.mark.parametrize(
+    ("https_url", "expected_drs_url"),
+    [
+        pytest.param(
+            "https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234",
+            "drs://api.service.nhs.uk/genomic-data-access/1234",
+            id="with api name in path",
+        ),
+        pytest.param(
+            "https://api.service.nhs.uk/ga4gh/drs/v1.4/objects/1234",
+            "drs://api.service.nhs.uk/1234",
+            id="without api name in path",
+        ),
+    ],
+)
+def test_map_https_to_drs_url(https_url: str, expected_drs_url: str) -> None:
+    assert map_https_to_drs_url(https_url) == expected_drs_url

@@ -10,12 +10,17 @@ from cgpclient.client import CGPClient
 from cgpclient.drs import CGPDrsClient, DrsObject
 from cgpclient.drsupload import (
     AccessURL,
+    AccessMethodType,
+    AccessMethod,
+    Checksum,
+    ChecksumType,
     DrsUploader,
     DrsUploadMethod,
     DrsUploadMethodType,
     DrsUploadRequest,
     DrsUploadResponse,
     S3Client,
+    coerce_aws_credentials,
 )
 from cgpclient.utils import CGPClientException, create_uuid
 
@@ -148,9 +153,9 @@ def test_s3_upload(mock_boto: MagicMock) -> None:
 
 @patch("cgpclient.drsupload.DrsUploader._request_upload")
 @patch("cgpclient.drsupload.S3Client.upload_file")
-@patch("cgpclient.drs.CGPDrsClient.post_drs_object")
+@patch("cgpclient.drs.CGPDrsClient.post_drs_candidate_object")
 def test_drs_upload_file(
-    mock_post_object: MagicMock,
+    mock_post_candidate_object: MagicMock,
     mock_s3_upload: MagicMock,
     mock_request_upload: MagicMock,
     tmp_path,
@@ -177,7 +182,20 @@ def test_drs_upload_file(
         make_upload_response(upload_request)
     )
     mock_s3_upload.return_value = "foo"
-    mock_post_object.return_value = None
+    mock_post_candidate_object.return_value = DrsObject(
+        id="foo-object-id",
+        self_uri="drs://dry-run/foo-object-id",
+        name=file_name,
+        size=len(file_data),
+        checksums=[Checksum(type=ChecksumType.MD5, checksum="md5placeholder")],
+        access_methods=[
+            AccessMethod(
+                type=AccessMethodType.S3,  # type: ignore
+                access_id="s3",
+                access_url=AccessURL(url="s3://bucket/prefix/test.fastq.gz"),
+            )
+        ],
+    )
 
     drs_client = CGPDrsClient(
         client.api_base_url,
@@ -194,9 +212,33 @@ def test_drs_upload_file(
 
     mock_request_upload.assert_called_once()
     mock_s3_upload.assert_called_once()
-    mock_post_object.assert_called_once()
+    mock_post_candidate_object.assert_called_once()
 
     assert drs_object.name == file_name
     assert drs_object.size == len(file_data)
     assert len(drs_object.access_methods) == 1
     assert drs_object.access_methods[0].access_id == "s3"
+
+
+def test_coerce_aws_credentials_accepts_correct_and_snake_case_keys() -> None:
+    # Already-correct AWS-style keys should remain usable and canonical.
+    creds_camel = {
+        "AccessKeyId": "key",
+        "SecretAccessKey": "secret",
+        "SessionToken": "token",
+    }
+    coerced = coerce_aws_credentials(creds_camel)
+    assert coerced == creds_camel
+
+    # Common snake_case prefixed keys should be coerced to canonical keys.
+    creds_snake = {
+        "access_key_id": "key2",
+        "secret_access_key": "secret2",
+        "session_token": "token2",
+    }
+    coerced2 = coerce_aws_credentials(creds_snake)
+    assert coerced2 == {
+        "AccessKeyId": "key2",
+        "SecretAccessKey": "secret2",
+        "SessionToken": "token2",
+    }

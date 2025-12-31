@@ -4,6 +4,8 @@ import logging
 import sys
 from pathlib import Path
 from typing import List
+from uuid import uuid4
+from datetime import datetime, timezone
 
 try:
     from enum import StrEnum  # type: ignore
@@ -204,6 +206,15 @@ class DrsObject(BaseModel):
             log.info("File hash successfully verified")
 
 
+class DrsCandidateObject(BaseModel):
+    name: str | None = None
+    size: int
+    mime_type: str | None = None
+    checksums: list[Checksum] = Field(min_length=1)
+    access_methods: list[AccessMethod] = Field(min_length=1)
+    description: str | None = None
+
+
 class Error(BaseModel):
     msg: str
     status_code: int
@@ -218,14 +229,18 @@ class CGPDrsClient:
         headers: dict,
         dry_run: bool = False,
         override_api_base_url: bool = False,
+        base_url_override: str | None = None,
     ):
         self.api_base_url = api_base_url
         self.headers = headers
         self.dry_run = dry_run
         self.override_api_base_url = override_api_base_url
+        self.base_url_override = base_url_override
 
     @property
     def base_url(self) -> str:
+        if self.base_url_override is not None and self.base_url_override.strip():
+            return self.base_url_override.rstrip("/")
         return drs_base_url(self.api_base_url)
 
     def get_drs_object(
@@ -252,13 +267,42 @@ class CGPDrsClient:
         log.debug(drs_object)
         return drs_object
 
-    def post_drs_object(
-        self, drs_object: DrsObject, output_dir: Path | None = None
-    ) -> None:
+    def post_drs_candidate_object(
+        self, candidate_object: DrsCandidateObject, output_dir: Path | None = None
+    ) -> DrsObject:
         """Post a DRS object to the DRS server"""
-        endpoint = f"{self.base_url}/objects"
-        log.info("Posting DRS object: %s", drs_object.id)
-        log.debug(drs_object.model_dump_json(exclude_defaults=True))
+        endpoint = f"{self.base_url}/register-objects"
+        log.info("Posting DRS object: %s", candidate_object.name)
+        log.debug(candidate_object.model_dump_json(exclude_defaults=True))
+
+        drs_object = None
+
+        if self.dry_run:
+            log.info("Dry run, so skipping posting DRS object")
+            drs_object = fake_drs_object_from(candidate_object=candidate_object)
+
+        else:
+            drs_request_body = {
+                "candidates": [
+                    candidate_object.model_dump(exclude_defaults=True, exclude_none=True)
+                ]
+            }
+            response = requests.post(
+                url=endpoint,
+                headers=self.headers,
+                timeout=REQUEST_TIMEOUT_SECS,
+                json=drs_request_body,
+            )
+
+            if response.ok:
+                drs_object = DrsObject.model_validate(response.json()["objects"][0])
+                log.info("Successfully posted DRS objects")
+
+            else:
+                raise CGPClientException(
+                    f"Error posting DRS object, status code: "
+                    f"{response.status_code} response: {response.text}"
+                )
 
         if output_dir is not None:
             output_file = output_dir / Path("drs_objects.json")
@@ -266,23 +310,7 @@ class CGPDrsClient:
             with open(output_file, "a", encoding="utf-8") as out:
                 print(drs_object.model_dump_json(), file=out)
 
-        if self.dry_run:
-            log.info("Dry run, so skipping posting DRS object")
-            return
-
-        response = requests.post(
-            url=endpoint,
-            headers=self.headers,
-            timeout=REQUEST_TIMEOUT_SECS,
-            json=drs_object.model_dump(),
-        )
-        if response.ok:
-            log.info("Successfully posted DRS objects")
-        else:
-            raise CGPClientException(
-                f"Error posting DRS object, status code: "
-                f"{response.status_code} response: {response.text}"
-            )
+        return drs_object
 
     def _https_url_from_id(self, object_id: str) -> str:
         """Construct an HTTPS DRS URL from a DRS object ID"""
@@ -297,8 +325,12 @@ class CGPDrsClient:
 
         if drs_url.startswith("https:"):
             if self.override_api_base_url:
+                # Preserve the path *after* /ga4gh/ but force the configured base.
+                # This supports deployments where the API is mounted under a prefix
+                # and/or where the DRS base URL is explicitly configured.
                 _, path = drs_url.split("/ga4gh/")
-                drs_url = f"https://{self.api_base_url}/ga4gh/{path}"
+                base_prefix = self.base_url.split("/ga4gh/")[0]
+                drs_url = f"{base_prefix}/ga4gh/{path}"
             return drs_url
 
         raise CGPClientException(f"Invalid DRS URL format {drs_url}")
@@ -330,7 +362,7 @@ class CGPDrsClient:
 
 def drs_base_url(api_base_url: str) -> str:
     """Return the base HTTPS URL for the DRS server"""
-    return f"https://{api_base_url}/ga4gh/drs/v1.4"
+    return f"https://{api_base_url}/ga4gh/drs/v1"
 
 
 def map_drs_to_https_url(drs_url: str) -> str:
@@ -340,8 +372,12 @@ def map_drs_to_https_url(drs_url: str) -> str:
     try:
         # e.g.       drs://api.service.nhs.uk/genomic-data-access/1234
         # maps to: https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234 # noqa: E501
-        (_, _, base_url, api_name, object_id) = drs_url.split("/")
-        api_base_url: str = f"{base_url}/{api_name}"
+        parts = drs_url.split("/")
+        if len(parts) not in (4,5):
+            raise ValueError()
+        object_id = parts[-1]
+        api_base_url = "/".join(parts[2:-1])
+
         https_url: str = f"{drs_base_url(api_base_url)}/objects/{object_id}"
         log.debug("Mapped DRS URL: %s to HTTPS URL: %s", drs_url, https_url)
         return https_url
@@ -351,16 +387,76 @@ def map_drs_to_https_url(drs_url: str) -> str:
 
 
 def map_https_to_drs_url(https_url: str) -> str:
-    """Map an HTTPS URL to a DRS URL"""
+    """Map an HTTPS URL to a DRS URL.
+
+    We assume:
+      - the host is always the 3rd element after splitting on "/"
+      - the object_id is always the final path element
+      - anything between host and the "ga4gh" segment is the optional api_path
+
+    Examples:
+      https://host/genomic-data-access/ga4gh/.../1234 -> drs://host/genomic-data-access/1234
+      https://host/ga4gh/.../1234                     -> drs://host/1234
+    """
     if not https_url.startswith("https://"):
         raise CGPClientException(f"Invalid HTTPS URL: {https_url}")
+
     try:
-        # e.g.    https://api.service.nhs.uk/genomic-data-access/ga4gh/drs/v1.4/objects/1234 # noqa: E501
-        # maps to:  drs://api.service.nhs.uk/genomic-data-access/1234
-        (_, _, base_url, api_name, _, _, _, _, object_id) = https_url.split("/")
-        drs_url: str = f"drs://{base_url}/{api_name}/{object_id}"
+        parts = https_url.split("/")
+
+        if len(parts) < 4:
+            raise ValueError()
+
+        host = parts[2]
+        object_id = parts[-1]
+
+        if not host or not object_id:
+            raise ValueError()
+
+        if "ga4gh" not in parts[3:]:
+            raise ValueError()
+
+        ga4gh_index = parts.index("ga4gh")
+        api_path_parts = parts[3:ga4gh_index]
+        api_path = "/".join(p for p in api_path_parts if p)
+
+        if api_path:
+            drs_url: str = f"drs://{host}/{api_path}/{object_id}"
+        else:
+            drs_url = f"drs://{host}/{object_id}"
+
         log.debug("Mapped HTTPS URL: %s to DRS URL: %s", https_url, drs_url)
         return drs_url
     except ValueError as e:
         log.error("Error parsing HTTPS DRS URL: %s", https_url)
         raise CGPClientException(f"Unable to parse HTTPS DRS URL: {https_url}") from e
+
+
+def fake_drs_object_from(candidate_object: "DrsCandidateObject") -> "DrsObject":
+    """
+    Create a synthetic DrsObject from a DrsCandidateObject (used for dry-run flows).
+
+    This keeps the user-provided metadata (name/size/mime_type/checksums/access_methods/description)
+    and fills required server-side fields with reasonable placeholders.
+    """
+    object_id = f"dryrun-{uuid4().hex}"
+    now_iso = datetime.now(timezone.utc).isoformat()
+
+    # Self URI is required by the DRS object model; use a clearly fake but valid-looking URI.
+    self_uri = f"drs://dry-run/{object_id}"
+
+    return DrsObject(
+        id=object_id,
+        name=candidate_object.name,
+        self_uri=self_uri,
+        size=candidate_object.size,
+        created_time=now_iso,
+        updated_time=now_iso,
+        version=None,
+        mime_type=candidate_object.mime_type,
+        checksums=candidate_object.checksums,
+        access_methods=candidate_object.access_methods,
+        contents=[],
+        description=candidate_object.description,
+        aliases=[],
+    )

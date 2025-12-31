@@ -4,7 +4,7 @@ This repository contains a python client library for interacting with CGP APIs h
 
 The repository also includes some scripts that perform (hopefully) useful functions using these modules, and which serve as examples on how to use the client library.
 
-__NB__ This package, and the APIs it communicates with, are under active development and are currently at the [Alpha](https://www.gov.uk/service-manual/agile-delivery/how-the-alpha-phase-works) phase of delivery. At this stage the APIs may still be subject to breaking changes, and we do not offer any SLAs etc. This code is intended to support NHS GMS partners to start to experiment with these new services and to provide feedback - please create an Issue in github, and pull requests are welcome! 
+__NB__ This package, and the APIs it communicates with, are under active development and are currently at the [Alpha](https://www.gov.uk/service-manual/agile-delivery/how-the-alpha-phase-works) phase of delivery. At this stage the APIs may still be subject to breaking changes, and we do not offer any SLAs etc. This code is intended to support NHS GMS partners to start to experiment with these new services and to provide feedback - please create an Issue in github, and pull requests are welcome! As of version `0.2.0` the client targets a revised version of the DRS upload spec.
 
 We anticipate moving to a private Beta phase in the second quarter of 2025, during which we will start to experiment with realistic data rather than the test data used so far.
 

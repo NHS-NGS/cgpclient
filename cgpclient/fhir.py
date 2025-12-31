@@ -152,15 +152,22 @@ class CGPFHIRClient:
         config: FHIRConfig,
         dry_run: bool,
         output_dir: Path | None = None,
+        base_url_override: str | None = None,
+        drs_base_url_override: str | None = None,
+
     ):
         self.api_base_url = api_base_url
         self.headers = headers
         self.config = config
         self.dry_run = dry_run
         self.output_dir = output_dir
+        self.base_url_override = base_url_override
+        self.drs_base_url_override = drs_base_url_override
 
     @property
     def base_url(self) -> str:
+        if self.base_url_override is not None and self.base_url_override.strip():
+            return self.base_url_override.rstrip("/")
         return fhir_base_url(self.api_base_url)
 
     def get_resource(
@@ -460,7 +467,13 @@ class CGPFHIRClient:
     ) -> list[DocumentReference]:
         """Upload the files using the DRS upload protocol and return a
         DocumentReference"""
-        drs_client = CGPDrsClient(self.api_base_url, self.headers, self.dry_run)
+        drs_client = CGPDrsClient(
+            self.api_base_url,
+            self.headers,
+            self.dry_run,
+            base_url_override=self.drs_base_url_override,
+
+        )
         uploader = DrsUploader(drs_client)
         drs_objects: list[DrsObject] = uploader.upload_files(filenames, self.output_dir)
 
@@ -511,7 +524,7 @@ class CGPFHIRClient:
         params: dict[str, str] | None = None,
     ) -> None:
         """Post a FHIR resource to the FHIR server"""
-        url: str = f"{fhir_base_url(self.api_base_url)}/{resource.resource_type}/"
+        url: str = f"{self.base_url}/{resource.resource_type}/"
 
         if resource.resource_type == Bundle.__name__ and resource.type in (
             BundleType.BATCH,
@@ -519,7 +532,7 @@ class CGPFHIRClient:
         ):
             # these bundle types are posted to the root of the FHIR server
             log.info("Posting bundle to the root FHIR endpoint")
-            url = f"{fhir_base_url(self.api_base_url)}/"
+            url = f"{self.base_url}/"
             if self.config.org_reference is not None:
                 resource = add_provenance_for_bundle(
                     bundle=resource, org_reference=self.config.org_reference
