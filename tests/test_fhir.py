@@ -8,6 +8,7 @@ import pytest
 
 from cgpclient.client import CGPClient
 from cgpclient.fhir import CGPFHIRClient, FHIRConfig  # type: ignore
+from cgpclient.utils import CGPClientException
 
 
 @pytest.fixture(scope="function")
@@ -259,6 +260,27 @@ def test_search_resource(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
     )
     resource = fhir.search_for_fhir_resource(resource_type="DocumentReference")
     assert resource.entry and len(resource.entry) == 1
+
+
+@patch("cgpclient.fhir.requests.get")
+def test_search_limits_resutls(mock_get: MagicMock, doc_ref_bundle: dict) -> None:
+    class MockedResponse:
+        def ok(self):
+            return True
+
+        def json(self):
+            doc_ref_bundle['link'] = [{'relation': 'next', 'url': '/'}]
+            return doc_ref_bundle
+
+    mock_get.side_effect = [MockedResponse()] * 10
+
+    config: FHIRConfig = FHIRConfig()
+
+    fhir: CGPFHIRClient = CGPFHIRClient(
+        api_base_url="host", headers={}, config=config, dry_run=False
+    )
+    with pytest.raises(CGPClientException):
+        fhir.search_for_fhir_resource(resource_type="DocumentReference", max_results=5)
 
 
 @patch("cgpclient.fhir.requests.get")
