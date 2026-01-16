@@ -7,8 +7,6 @@ import logging
 import typing
 from pathlib import Path
 
-from pydantic.v1.validators import max_str_int
-
 try:
     from enum import StrEnum
 except ImportError:
