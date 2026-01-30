@@ -294,7 +294,6 @@ def test_upload_file(
     mock_post.assert_called_once()
 
 
-@pytest.mark.this
 @patch("cgpclient.drsupload.DrsUploader.upload_files")
 @patch("cgpclient.fhir.CGPFHIRClient.post_fhir_resource")
 def test_upload_dragen(
@@ -315,7 +314,7 @@ def test_upload_dragen(
     fastq_list: Path = tmp_path / "list.csv"
     with open(fastq_list, "w", encoding="utf-8") as o:
         o.write("RGID,RGSM,RGLB,Lane,Read1File,Read2File\n")
-        o.write("rgid,s123,rglb,1,file1.fastq.gz,file2.fastq.gz\n")
+        o.write("rgid,s123_dna,rglb,1,file1.fastq.gz,file2.fastq.gz\n")
     client.upload_dragen_run(fastq_list_csv=fastq_list)
     mock_drs_upload.assert_called_once()
     mock_post.assert_called_once()

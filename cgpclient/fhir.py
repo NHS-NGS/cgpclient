@@ -812,7 +812,7 @@ class FHIRConfig:
         if self.participant_id is None:
             raise CGPClientException("No participant ID supplied")
         return Identifier(
-            system="https://genomicsengland.co.uk/ngis-participant-id",
+            system="https://genomicsengland.co.uk/healthcare/participant-id",
             value=self.participant_id,
         )
 
@@ -837,7 +837,7 @@ class FHIRConfig:
         if self.referral_id is None:
             raise CGPClientException("No referral ID supplied")
         return Identifier(
-            system="https://genomicsengland.co.uk/ngis-referral-id",
+            system="https://genomicsengland.co.uk/id/healthcare/referral-id",
             value=self.referral_id,
         )
 
@@ -853,7 +853,7 @@ class FHIRConfig:
         if self.primary_sample_id is None:
             raise CGPClientException("No primary sample ID supplied")
         return Identifier(
-            system="https://TBC.nhs.uk/lab-sample-id",
+            system="https://TBC.nhs.uk/lab-sample-id",  # TODO: should SGL pass on the RGL's ODS code and primary sample ID?
             value=self.primary_sample_id,
         )
 
@@ -869,8 +869,9 @@ class FHIRConfig:
         if self.final_sample_id is None:
             raise CGPClientException("No final sample ID supplied")
         return Identifier(
-            system=f"https://{self.org_identifier.value}.nhs.uk/final-lab-sample-id",
+            system=f"https://{self.org_identifier.value}.nhs.uk/fluidx-tube-id",  # TODO: FHIR IG talks about "final sample"
             value=self.final_sample_id,
+            assigner=self.org_reference,
         )
 
     @property

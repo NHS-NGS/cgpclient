@@ -15,7 +15,7 @@ from fhir.resources.R4B.documentreference import (
 )
 from fhir.resources.R4B.extension import Extension
 from fhir.resources.R4B.procedure import Procedure, ProcedurePerformer
-from fhir.resources.R4B.specimen import Specimen
+from fhir.resources.R4B.specimen import Specimen, SpecimenContainer
 from pydantic import BaseModel, PositiveInt
 
 from cgpclient.fhir import (  # type: ignore
@@ -118,65 +118,55 @@ def fastq_list_entry_to_document_references(
     return doc_refs
 
 
+# @typing.no_type_check
+# def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
+#     log.info("Creating Specimen resource for germline blood sample")
+
+#     return Specimen(
+#         id=create_uuid(),
+#         identifier=[fhir_config.sample_identifier],
+#         subject=fhir_config.participant_reference,
+#         request=[fhir_config.referral_reference],
+#         extension=[
+#             Extension(
+#                 url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+#                 valueCodeableConcept=CodeableConcept(
+#                     coding=[
+#                         Coding(
+#                             system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+#                             code="germline",
+#                             display="Germline",
+#                         )
+#                     ]
+#                 ),
+#             )
+#         ],
+#         type=CodeableConcept(
+#             coding=[
+#                 Coding(
+#                     system="http://snomed.info/sct",
+#                     code="445295009",
+#                     display="Blood specimen with EDTA",
+#                 )
+#             ]
+#         ),
+#     )
+
+
 @typing.no_type_check
-def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
-    log.info("Creating Specimen resource for germline blood sample")
-
-    return Specimen(
-        id=create_uuid(),
-        identifier=[fhir_config.sample_identifier],
-        subject=fhir_config.participant_reference,
-        request=[fhir_config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="germline",
-                            display="Germline",
-                        )
-                    ]
-                ),
-            )
-        ],
-        type=CodeableConcept(
-            coding=[
-                Coding(
-                    system="http://snomed.info/sct",
-                    code="445295009",
-                    display="Blood specimen with EDTA",
-                )
-            ]
-        ),
-    )
-
-
-@typing.no_type_check
-def create_final_sample(fhir_config: FHIRConfig) -> Specimen:
+def create_final_germline_dna_sample(fhir_config: FHIRConfig) -> Specimen:
     log.info("Creating Specimen resource for final Germline DNA sample")
 
     return Specimen(
         id=create_uuid(),
-        identifier=[fhir_config.final_sample_identifier],
+        identifier=[
+            fhir_config.final_sample_identifier
+        ],  # this is the fluidx tube identifier
         subject=fhir_config.participant_reference,
         request=[fhir_config.referral_reference],
-        extension=[
-            Extension(
-                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
-                valueCodeableConcept=CodeableConcept(
-                    coding=[
-                        Coding(
-                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
-                            code="germline",
-                            display="Germline",
-                        )
-                    ]
-                ),
-            )
-        ],
-        parent=[fhir_config.primary_sample_reference],
+        parent=[
+            fhir_config.primary_sample_reference
+        ],  # this is a reference to the primary blood specimen from which the DNA was extracted
         type=CodeableConcept(
             coding=[
                 Coding(
@@ -192,6 +182,20 @@ def create_final_sample(fhir_config: FHIRConfig) -> Specimen:
 @typing.no_type_check
 def create_primary_sample(fhir_config: FHIRConfig) -> Specimen:
     log.info("Creating Primary Specimen resource for germline blood sample")
+
+    specimen_container_edta_additive = CodeableConcept(
+        coding=[
+            Coding(
+                system="http://snomed.info/sct",
+                code="69519002",
+                display="EDTA",
+            )
+        ]
+    )
+
+    container = SpecimenContainer()
+
+    container.additiveCodeableConcept = specimen_container_edta_additive
 
     return Specimen(
         id=create_uuid(),
@@ -217,10 +221,11 @@ def create_primary_sample(fhir_config: FHIRConfig) -> Specimen:
                 Coding(
                     system="http://snomed.info/sct",
                     code="445295009",
-                    display="Blood specimen with EDTA",
+                    display="Blood specimen with EDTA",  # TODO: make this come from the command line argument
                 )
             ]
         ),
+        container=[container],
     )
 
 
@@ -256,7 +261,7 @@ def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
 def create_specimen(fhir_config: FHIRConfig) -> Specimen:
     if fhir_config.tumour_id is not None:
         return create_tumour_sample(fhir_config=fhir_config)
-    return create_germline_sample(fhir_config=fhir_config)
+    return create_final_germline_dna_sample(fhir_config=fhir_config)
 
 
 @typing.no_type_check
@@ -290,7 +295,9 @@ def map_entries_to_bundle(
 
     # specimen: Specimen = create_specimen(fhir_config=fhir_service.config)
     primary_specimen: Specimen = create_primary_sample(fhir_config=fhir_service.config)
-    final_specimen: Specimen = create_final_sample(fhir_config=fhir_service.config)
+    final_specimen: Specimen = create_final_germline_dna_sample(
+        fhir_config=fhir_service.config
+    )
 
     procedure: Procedure = create_procedure(fhir_config=fhir_service.config)
 
@@ -336,7 +343,6 @@ def upload_dragen_run(
 
     if fhir_config.final_sample_id is None:
         fhir_config.final_sample_id = entries[0].RGSM
-    breakpoint()
     bundle: Bundle = map_entries_to_bundle(
         entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
