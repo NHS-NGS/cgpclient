@@ -294,6 +294,7 @@ def test_upload_file(
     mock_post.assert_called_once()
 
 
+@pytest.mark.this
 @patch("cgpclient.drsupload.DrsUploader.upload_files")
 @patch("cgpclient.fhir.CGPFHIRClient.post_fhir_resource")
 def test_upload_dragen(
@@ -302,7 +303,8 @@ def test_upload_dragen(
     config: FHIRConfig = FHIRConfig(
         ods_code="ODS",
         participant_id="p123",
-        sample_id="s123",
+        primary_sample_id="s123_blood",
+        final_sample_id="s123_dna",
         referral_id="r123",
         run_id="run123",
     )
@@ -358,7 +360,8 @@ def test_download_file(
     config: FHIRConfig = FHIRConfig(
         ods_code="ODS",
         participant_id="p123",
-        sample_id="s123",
+        primary_sample_id="s123_blood",
+        final_sample_id="s123_dna",
         referral_id="r123",
         run_id="run123",
     )

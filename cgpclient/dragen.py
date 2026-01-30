@@ -154,6 +154,77 @@ def create_germline_sample(fhir_config: FHIRConfig) -> Specimen:
 
 
 @typing.no_type_check
+def create_final_sample(fhir_config: FHIRConfig) -> Specimen:
+    log.info("Creating Specimen resource for final Germline DNA sample")
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[fhir_config.final_sample_identifier],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="germline",
+                            display="Germline",
+                        )
+                    ]
+                ),
+            )
+        ],
+        parent=[fhir_config.primary_sample_reference],
+        type=CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://snomed.info/sct",
+                    code="258566005",
+                    display="DNA",
+                )
+            ]
+        ),
+    )
+
+
+@typing.no_type_check
+def create_primary_sample(fhir_config: FHIRConfig) -> Specimen:
+    log.info("Creating Primary Specimen resource for germline blood sample")
+
+    return Specimen(
+        id=create_uuid(),
+        identifier=[fhir_config.primary_sample_identifier],
+        subject=fhir_config.participant_reference,
+        request=[fhir_config.referral_reference],
+        extension=[
+            Extension(
+                url="https://fhir.hl7.org.uk/StructureDefinition/Extension-UKCore-SampleCategory",  # noqa: E501
+                valueCodeableConcept=CodeableConcept(
+                    coding=[
+                        Coding(
+                            system="https://fhir.hl7.org.uk/CodeSystem/UKCore-SampleCategory",  # noqa: E501
+                            code="germline",
+                            display="Germline",
+                        )
+                    ]
+                ),
+            )
+        ],
+        type=CodeableConcept(
+            coding=[
+                Coding(
+                    system="http://snomed.info/sct",
+                    code="445295009",
+                    display="Blood specimen with EDTA",
+                )
+            ]
+        ),
+    )
+
+
+@typing.no_type_check
 def create_tumour_sample(fhir_config: FHIRConfig) -> Specimen:
     log.info("Creating Specimen resource for tumour sample")
 
@@ -217,7 +288,9 @@ def map_entries_to_bundle(
 ) -> Bundle:
     """Create a FHIR transaction Bundle for the entries from the FASTQ list CSV"""
 
-    specimen: Specimen = create_specimen(fhir_config=fhir_service.config)
+    # specimen: Specimen = create_specimen(fhir_config=fhir_service.config)
+    primary_specimen: Specimen = create_primary_sample(fhir_config=fhir_service.config)
+    final_specimen: Specimen = create_final_sample(fhir_config=fhir_service.config)
 
     procedure: Procedure = create_procedure(fhir_config=fhir_service.config)
 
@@ -237,13 +310,15 @@ def map_entries_to_bundle(
         )
 
     composition: Composition = create_composition(
-        specimen=specimen,
+        specimen=[primary_specimen, final_specimen],
         procedure=procedure,
         document_references=document_references,
         fhir_config=fhir_service.config,
     )
 
-    return bundle_for([composition, specimen, procedure] + document_references)
+    return bundle_for(
+        [composition, primary_specimen, final_specimen, procedure] + document_references
+    )
 
 
 def upload_dragen_run(
@@ -256,14 +331,13 @@ def upload_dragen_run(
     """
     fhir_config = fhir_service.config
     entries: list[FastqListEntry] = read_fastq_list(
-        fastq_list_csv=fastq_list_csv, sample_id=fhir_config.sample_id
+        fastq_list_csv=fastq_list_csv, sample_id=fhir_config.final_sample_id
     )
 
-    if fhir_config.sample_id is None:
-        fhir_config.sample_id = entries[0].RGSM
-
+    if fhir_config.final_sample_id is None:
+        fhir_config.final_sample_id = entries[0].RGSM
+    breakpoint()
     bundle: Bundle = map_entries_to_bundle(
         entries=entries, run_info_file=run_info_file, fhir_service=fhir_service
     )
-
     fhir_service.post_fhir_resource(resource=bundle)  # type: ignore

@@ -663,12 +663,25 @@ def add_provenance_for_bundle(bundle: Bundle, org_reference: Reference) -> Bundl
 
 @typing.no_type_check
 def create_composition(
-    specimen: Specimen,
+    specimen: Specimen | list[Specimen],
     procedure: Procedure,
     document_references: list[DocumentReference],
     fhir_config: FHIRConfig,
 ) -> Composition:
     log.info("Creating Composition resource for delivery")
+
+    if isinstance(specimen, list):
+        specimen_composition = [
+            CompositionSection(
+                title="sample", entry=[reference_for(individual_specimen)]
+            )
+            for individual_specimen in specimen
+        ]
+    else:
+        specimen_composition = [
+            CompositionSection(title="sample", entry=[reference_for(specimen)])
+        ]
+
     return Composition(
         id=create_uuid(),
         status=CompositionStatus.FINAL,
@@ -685,7 +698,7 @@ def create_composition(
         author=[fhir_config.org_reference],
         title="WGS sample run",
         section=[
-            CompositionSection(title="sample", entry=[reference_for(specimen)]),
+            *specimen_composition,
             CompositionSection(title="run", entry=[reference_for(procedure)]),
             CompositionSection(
                 title="files",
@@ -705,7 +718,8 @@ class FHIRConfig:
         referral_id: str | None = None,
         ods_code: str | None = None,
         run_id: str | None = None,
-        sample_id: str | None = None,
+        primary_sample_id: str | None = None,
+        final_sample_id: str | None = None,
         tumour_id: str | None = None,
         clinical_indication_code: str | None = None,
         file_id: str | None = None,
@@ -719,7 +733,8 @@ class FHIRConfig:
         self.referral_id = referral_id
         self.run_id = run_id
         self.ods_code = ods_code
-        self.sample_id = sample_id
+        self.primary_sample_id = primary_sample_id
+        self.final_sample_id = final_sample_id
         self.tumour_id = tumour_id
         self.clinical_indication_code = clinical_indication_code
         self.file_id = file_id
@@ -751,7 +766,8 @@ class FHIRConfig:
     def related_references(self) -> list[Reference]:
         methods: list[str] = [
             "referral_reference",
-            "sample_reference",
+            "primary_sample_reference",
+            "final_sample_reference",
             "run_reference",
         ]
 
@@ -770,7 +786,8 @@ class FHIRConfig:
     def related_query_string(self) -> str | None:
         methods: list[str] = [
             "referral_identifier",
-            "sample_identifier",
+            "primary_sample_identifier",
+            "final_sample_identifier",
             "run_identifier",
             "tumour_identifier",
         ]
@@ -832,18 +849,34 @@ class FHIRConfig:
         )
 
     @property
-    def sample_identifier(self) -> Identifier:
-        if self.sample_id is None:
-            raise CGPClientException("No sample ID supplied")
+    def primary_sample_identifier(self) -> Identifier:
+        if self.primary_sample_id is None:
+            raise CGPClientException("No primary sample ID supplied")
         return Identifier(
-            system=f"https://{self.org_identifier.value}.nhs.uk/lab-sample-id",
-            value=self.sample_id,
+            system="https://TBC.nhs.uk/lab-sample-id",
+            value=self.primary_sample_id,
         )
 
     @property
-    def sample_reference(self) -> Reference:
+    def primary_sample_reference(self) -> Reference:
         return Reference(
-            identifier=self.sample_identifier,
+            identifier=self.primary_sample_identifier,
+            type=Specimen.__name__,
+        )
+
+    @property
+    def final_sample_identifier(self) -> Identifier:
+        if self.final_sample_id is None:
+            raise CGPClientException("No final sample ID supplied")
+        return Identifier(
+            system=f"https://{self.org_identifier.value}.nhs.uk/final-lab-sample-id",
+            value=self.final_sample_id,
+        )
+
+    @property
+    def final_sample_reference(self) -> Reference:
+        return Reference(
+            identifier=self.final_sample_identifier,
             type=Specimen.__name__,
         )
 
